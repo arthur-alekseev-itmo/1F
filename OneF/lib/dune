@@ -1,3 +1,4 @@
 (library
-  (preprocess (pps ppx_deriving.show ppx_deriving.ord))
-  (name OneF))
+ (preprocess
+  (pps ppx_deriving.show ppx_deriving.ord))
+ (name OneF))
