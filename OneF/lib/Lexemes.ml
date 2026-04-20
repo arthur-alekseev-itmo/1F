@@ -1,16 +1,18 @@
 module Lexemes = struct
-  type lexeme_payload =
-    | IntLiteral of string
-    | FloatLiteral of string
+  type t = 
+    | IntLiteral of int
+    | FloatLiteral of float
     | StringLiteral of string
-    | BoolLiteral of string
+    | BoolLiteral of bool 
     | Let
-    | RecFlag
+    | Rec
     | In
+    | Arrow
+    | Equals
     | Operator of string
     | Wildcard
     | Identifier of string
-    | Fun
+    | Lambda 
     | Type
     | Eof
     | LCbr
@@ -27,11 +29,6 @@ module Lexemes = struct
     | Of
     | Dot
     | Comma
+    | Unit
   [@@deriving show]
-
-  type lexeme_position = { line : int; start : int; length : int; file : string } [@@deriving show]
-  type lexeme = { payload : lexeme_payload; position : lexeme_position } [@@deriving show]
-  type t = lexeme list
-
-  let dump_file (_path : string) (_lexemes : t) = failwith "TODO"
 end
