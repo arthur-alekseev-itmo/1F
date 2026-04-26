@@ -1,3 +1,16 @@
 (test
  (name lexer_tests)
  (libraries OneF))
+
+(executable
+ (name test_lexer)
+ (modules test_lexer)
+ (public_name test_lexer)
+ (libraries OneF stdio)
+ (instrumentation
+  (backend bisect_ppx)))
+
+(cram
+ (deps
+ "./test_lexer.exe")
+)

@@ -6,7 +6,11 @@ module Parser = struct
   type input = token list
 
   (* Parsing results *)
-  type 'a parse_result = Failed of string | Parsed of 'a * input | HardFailed of string
+  type 'a parse_result =
+    | Failed of string
+    | Parsed of 'a * input
+    | HardFailed of string
+
   type 'a parser = input -> 'a parse_result
 
   (* return parser *)
@@ -17,7 +21,8 @@ module Parser = struct
   (* Parse token if cond returns true *)
   let parse_token cond = function
     | h :: t when cond h -> return h t
-    | h :: _ -> Failed (Format.asprintf "symbol \"%s\" not resolved" (to_string h))
+    | h :: _ ->
+        Failed (Format.asprintf "symbol \"%s\" not resolved" (to_string h))
     | _ -> Failed "unexpected EOF"
 
   let token t = parse_token (( = ) t)
@@ -48,7 +53,10 @@ module Parser = struct
 
   (* or operator *)
   let ( <|> ) p1 p2 s =
-    match p1 s with Failed _ -> p2 s | HardFailed msg -> HardFailed msg | res -> res
+    match p1 s with
+    | Failed _ -> p2 s
+    | HardFailed msg -> HardFailed msg
+    | res -> res
 
   let ( << ) p1 p2 s = (p1 <* p2 <|> p1) s
 
@@ -92,9 +100,12 @@ module Parser = struct
   let parens p = token LPar *> p <* token RPar
 
   let lN_operator starts : (expr -> expr -> expr parser) parser =
-    let continue op a b = return @@ Application (Application (Value op, a), b) in
+    let continue op a b =
+      return @@ Application (Application (Value op, a), b)
+    in
     let check_prefix x =
-      List.for_all (fun c -> String.starts_with ~prefix:c x |> not) starts |> not
+      List.for_all (fun c -> String.starts_with ~prefix:c x |> not) starts
+      |> not
     in
     let inner op =
       match op with
@@ -106,7 +117,7 @@ module Parser = struct
 
   let parse_id =
     let* t = parse_token (fun _ -> true) in
-    match t with Identifier i -> return @@ i | _ -> fail "Not an identifier"
+    match t with SmallIdentifier i -> return @@ i | _ -> fail "Not an identifier"
 
   let parse_value =
     let* id = parse_id in
@@ -142,7 +153,8 @@ module Parser = struct
     in
     (just_id <|> operator_id <|> others) input
 
-  let parse_operator_value = parse_operator_literal >>= fun v -> return @@ Value v
+  let parse_operator_value =
+    parse_operator_literal >>= fun v -> return @@ Value v
 
   let rec parse_tuple input =
     let inner =
@@ -165,8 +177,8 @@ module Parser = struct
     inner input
 
   and parse_atom input =
-    (parse_ite <|> parse_operator_value <|> parse_tuple <|> parse_value <|> parse_numeric
-   <|> parse_let)
+    (parse_ite <|> parse_operator_value <|> parse_tuple <|> parse_value
+   <|> parse_numeric <|> parse_let)
       input
 
   and parse_let input =
@@ -178,7 +190,9 @@ module Parser = struct
       let* value = token (Operator "=") *> parse_expr in
       let* body = token In *> parse_expr in
       let fun_expr =
-        List.fold_left (fun body arg -> Lambda { arg; body }) value (List.rev args)
+        List.fold_left
+          (fun body arg -> Lambda { arg; body })
+          value (List.rev args)
       in
       return @@ LetIn (recursive |> Option.is_some, pat, fun_expr, body)
     in

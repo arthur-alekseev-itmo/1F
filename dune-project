@@ -23,6 +23,7 @@
  (description "A longer description")
  (depends
   ocaml
+  uucp
   dune
   menhir
   menhirLib

@@ -1,10 +1,10 @@
 open OneF.Lexer
 open OneF.Lexemes
-open OneF.Ast.Ast
-open OneF.Interpreter
 
 let input_file = ref "вход.1ф"
 let output_file = ref None
+let use_stdout = ref false
+let use_stdin = ref false
 
 let speclist =
   [
@@ -12,30 +12,34 @@ let speclist =
     ( "--output",
       Arg.String (fun x -> output_file := Some x),
       "Output file to be dumped to" );
+    ( "--stdout",
+      Arg.Bool (fun x -> use_stdout := x),
+      "Use stdout instead of outputting to a file" );
+    ( "--stdin",
+      Arg.Bool (fun x -> use_stdin := x),
+      "Use stdin instead of reading a file" );
   ]
 
 let usage_msg = "1ф --input <path> [--output <path>]"
 
-let () =
-  let program =
-    [
-      {
-        name = PatUnit;
-        body = Application (Value "print", Const (StringLiteral "Hi!"));
-        recursive = false;
-      };
-    ]
-  in
-  Interpreter.interpret program |> ignore
+let dump_tokens tokens =
+  let output_path = Option.value ~default:(!input_file ^ ".out") !output_file in
+  match !use_stdout with
+  | false -> Lexemes.dump_file output_path tokens
+  | true -> Lexemes.dump tokens |> print_endline |> Result.ok
+
+let read_tokens () =
+  match !use_stdin with
+  | true ->
+      let content = In_channel.input_all In_channel.stdin in
+      Lexer.lex_string content
+  | false -> Lexer.lex_file !input_file
 
 let main () =
   let ( let* ) = Result.bind in
   Arg.parse speclist ignore usage_msg;
-  let* lexemes = Lexer.lex_file !input_file in
-  let output_path =
-    match !output_file with None -> !input_file ^ ".out" | Some x -> x
-  in
-  Lexemes.dump output_path lexemes
+  let* tokens = read_tokens () in
+  dump_tokens tokens
 
 let () =
   match main () with

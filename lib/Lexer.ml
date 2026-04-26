@@ -13,13 +13,18 @@ module Lexer = struct
 
   let op_char =
     [%sedlex.regexp?
-      ( '!' | '$' | '%' | '&' | '*' | '+' | '-' | '.' | '/' | ':' | '<' | '=' | '>' | '?'
-      | '@' | '^' | '|' | '~' )]
+      ( '!' | '$' | '%' | '&' | '*' | '+' | '-' | '.' | '/' | ':' | '<' | '='
+      | '>' | '?' | '@' | '^' | '|' | '~' )]
 
   let operator_reg = [%sedlex.regexp? Plus op_char]
 
   let float_reg =
     [%sedlex.regexp? Plus digit, '.', Star digit | Star digit, '.', Plus digit]
+
+  let is_capital s =
+    let is_uppercase uchar = Uucp.Gc.general_category uchar = `Lu in
+    let uchar = String.get_utf_8_uchar s 0 |> Uchar.utf_decode_uchar in
+    is_uppercase uchar
 
   let get_id s =
     match s with
@@ -32,7 +37,12 @@ module Lexer = struct
     | "лямбда" -> Lambda
     | "да" -> BoolLiteral true
     | "нет" -> BoolLiteral false
-    | s -> Identifier s
+    | "модуль" -> Module
+    | "структура" -> Struct
+    | "конец" -> End
+    | "открыть" -> Open
+    | s when is_capital s -> BigIdentifier s
+    | s -> SmallIdentifier s
 
   let rec token buf =
     match%sedlex buf with
@@ -44,7 +54,8 @@ module Lexer = struct
     | "(" -> ok LPar
     | ")" -> ok RPar
     | "," -> ok Comma
-    | float_reg -> ok @@ FloatLiteral (float_of_string (Sedlexing.Utf8.lexeme buf))
+    | float_reg ->
+        ok @@ FloatLiteral (float_of_string (Sedlexing.Utf8.lexeme buf))
     | Plus digit -> ok @@ IntLiteral (int_of_string (Sedlexing.Utf8.lexeme buf))
     | operator_reg -> ok @@ Operator (Sedlexing.Utf8.lexeme buf)
     | id -> ok @@ get_id (Sedlexing.Utf8.lexeme buf)
@@ -61,10 +72,11 @@ module Lexer = struct
 
   let read_file path =
     try In_channel.with_open_text path In_channel.input_all |> Result.ok
-    with Sys_error e -> Format.sprintf "Error while reading file: %s" e |> Result.error
+    with Sys_error e ->
+      Format.sprintf "Error while reading file: %s" e |> Result.error
 
-  let rec list_of_gen (s : unit -> (t * Lexing.position * Lexing.position, string) result)
-      =
+  let rec list_of_gen
+      (s : unit -> (t * Lexing.position * Lexing.position, string) result) =
     let* r = s () in
     match r with
     | Eof, _, _ -> ok []

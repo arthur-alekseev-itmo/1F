@@ -48,7 +48,8 @@ module Interpreter = struct
         let expr' = eval_expr expr ctx in
         let ctx' = set_pattern_to_ctx pat expr' ctx in
         eval_expr body ctx'
-    | Lambda lam -> VClosure { f = lam; captured = ctx.locals } (* Сохранять ссылочку  *)
+    | Lambda lam ->
+        VClosure { f = lam; captured = ctx.locals } (* Сохранять ссылочку  *)
     | IfThenElse ite -> eval_ite ite ctx
     | TupleInit xs ->
         let xs' = List.map (fun e -> eval_expr e ctx) xs in
@@ -74,7 +75,8 @@ module Interpreter = struct
     let value' = eval_expr d.body ctx in
     set_pattern_to_ctx d.name value' ctx
 
-  let interpret (p : Ast.program) = List.fold_left interpret_decl initial_stack p
+  let interpret (p : Ast.program) =
+    List.fold_left interpret_decl initial_stack p
 
   let eval_string s =
     let run = function
