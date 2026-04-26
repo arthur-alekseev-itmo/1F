@@ -1,5 +1,5 @@
 module Tipec = struct
-  open ParseTree.ParseTree
+  open Ast.Ast
 
   type typ = TInt | TFloat | TString | TBool | TSkib | TVar of int | TFun of typ * typ | TTuple of typ list
   type scheme = Forall of int list * typ
@@ -143,6 +143,7 @@ module Tipec = struct
     | StringLiteral _ -> TString
     | BoolLiteral _ -> TBool
     | UnitLiteral -> TSkib
+    | FloatLiteral _ -> TFloat
 
   let generalise_pattern_env outer_env pattern_env =
     StringMap.map
@@ -213,9 +214,9 @@ module Tipec = struct
         unify cond_type TBool;
         unify then_type else_type;
         apply_subst !subst_v then_type
-    | LetIn (decl, body) ->
-        let env_with_decl = infer_decl env decl in
-        infer_expr_x3d env_with_decl body
+    | LetIn (recursive, arg, decl, body) ->
+        failwith "TODO"
+    | TupleInit _ -> failwith "TODO"
 
   and infer_decl_binding env (decl : decl) =
     if decl.recursive then
@@ -234,7 +235,7 @@ module Tipec = struct
       unify pattern_type body_type;
       generalise_pattern_env env pattern_env
 
-  and infer_decl env decl = extend_env env (infer_decl_binding env decl)
+  and infer_decl env (decl: decl) = extend_env env (infer_decl_binding env decl)
 
   let infer_program env (program : program) = List.fold_left infer_decl env program
 end
