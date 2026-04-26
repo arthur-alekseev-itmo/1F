@@ -5,31 +5,27 @@
 (generate_opam_files true)
 
 (source
- (github username/reponame))
+ (gitlab arthur.alekseev.itmo/mse-fl))
 
-(authors "Author Name <author@example.com>")
+(authors "Arthur Alekseev <arthur.alekseev.itmo@gmail.com> + OCaml PRO team")
 
-(maintainers "Maintainer Name <maintainer@example.com>")
+(maintainers "Arthur Alekseev <arthur.alekseev.itmo@gmail.com>")
 
 (license LICENSE)
 
 (documentation https://url/to/documentation)
 
-(using menhir 3.0)
-
 (package
  (name OneF)
- (synopsis "A short synopsis")
- (description "A longer description")
+ (synopsis "OneF Language interpreter")
+ (description "OneF language interpeter")
  (depends
   ocaml
   uucp
   dune
-  menhir
-  menhirLib
   ppx_deriving
   sedlex)
  (tags
-  ("add topics" "to describe" your project)))
+  (skibidi importozameshenie fp ocaml)))
 
 ; See the complete stanza docs at https://dune.readthedocs.io/en/stable/reference/dune-project/index.html
