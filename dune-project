@@ -21,7 +21,13 @@
  (name OneF)
  (synopsis "A short synopsis")
  (description "A longer description")
- (depends ocaml)
+ (depends
+  ocaml
+  dune
+  menhir
+  menhirLib
+  ppx_deriving
+  sedlex)
  (tags
   ("add topics" "to describe" your project)))
 

@@ -1,0 +1,3 @@
+(test
+ (name tipec_tests)
+ (libraries OneF))
