@@ -121,7 +121,15 @@ module Parser = struct
     | BoolLiteral x -> return @@ Const (BoolLiteral x)
     | _ -> fail "Not a literal"
 
+  let parse_operator_literal =
+    let* token = parens (parse_token (fun _ -> true)) in
+    match token with Operator x -> return x | _ -> fail "Not an operator"
+
   let rec parse_pattern input =
+    let operator_id =
+      let* lit = parse_operator_literal in
+      return @@ PatVariable lit
+    in
     let just_id = parse_id >>= fun id -> return @@ PatVariable id in
     let others =
       let* in_parens =
@@ -132,7 +140,9 @@ module Parser = struct
       | [ x ] -> return x
       | xs -> return @@ PatTuple xs
     in
-    (just_id <|> others) input
+    (just_id <|> operator_id <|> others) input
+
+  let parse_operator_value = parse_operator_literal >>= fun v -> return @@ Value v
 
   let rec parse_tuple input =
     let inner =
@@ -155,7 +165,9 @@ module Parser = struct
     inner input
 
   and parse_atom input =
-    (parse_tuple <|> parse_value <|> parse_numeric <|> parse_let) input
+    (parse_ite <|> parse_operator_value <|> parse_tuple <|> parse_value <|> parse_numeric
+   <|> parse_let)
+      input
 
   and parse_let input =
     let inner =
@@ -169,6 +181,15 @@ module Parser = struct
         List.fold_left (fun body arg -> Lambda { arg; body }) value (List.rev args)
       in
       return @@ LetIn (recursive |> Option.is_some, pat, fun_expr, body)
+    in
+    inner input
+
+  and parse_ite input =
+    let inner =
+      let* cond = token If *> parse_expr in
+      let* thenBranch = token Then *> parse_expr in
+      let* elseBranch = token Else *> parse_expr in
+      return @@ IfThenElse { cond; thenBranch; elseBranch }
     in
     inner input
 

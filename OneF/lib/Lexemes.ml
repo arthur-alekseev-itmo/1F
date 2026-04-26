@@ -28,7 +28,6 @@ module Lexemes = struct
     | Of
     | Dot
     | Comma
-    | Unit
   [@@deriving show]
 
   let to_string = function
@@ -61,7 +60,6 @@ module Lexemes = struct
     | Of -> "из"
     | Dot -> "точка"
     | Comma -> "запятая"
-    | Unit -> "юнит"
 
   let write_file (path : string) (content : string) =
     try

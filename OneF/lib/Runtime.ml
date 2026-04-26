@@ -1,7 +1,7 @@
 open Ast
 
 module Runtime = struct
-  module StringMap = Map.Make(String)
+  module StringMap = Map.Make (String)
 
   type value =
     | VClosure of closure_data
@@ -44,7 +44,5 @@ module Runtime = struct
       |> fun s -> "{ " ^ s ^ " }"
     in
     hashtbl_to_string ctx.locals |> print_endline;
-    match ctx.parent with
-    | None -> ()
-    | Some p -> print_context p
+    match ctx.parent with None -> () | Some p -> print_context p
 end

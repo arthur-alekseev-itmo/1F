@@ -32,7 +32,8 @@ module Interpreter = struct
     | _ -> failwith "Bad pattern match"
 
   let set_pattern_to_ctx (p : Ast.pattern) (e : value) ctx =
-    let locals = set_pattern p e ctx.locals in {ctx with locals}
+    let locals = set_pattern p e ctx.locals in
+    { ctx with locals }
 
   let rec eval_expr (e : Ast.expr) ctx =
     match e with
@@ -64,15 +65,14 @@ module Interpreter = struct
     match callee with
     | VBuiltin b -> b arg
     | VClosure closure ->
-        let _ = set_pattern closure.f.arg arg closure.captured in
-        let ctx' = { parent = Some ctx; locals = closure.captured } in
+        let cap' = set_pattern closure.f.arg arg closure.captured in
+        let ctx' = { parent = Some ctx; locals = cap' } in
         eval_expr closure.f.body ctx'
     | _ -> failwith "Cannot apply non-function"
 
   let interpret_decl ctx (d : Ast.decl) =
     let value' = eval_expr d.body ctx in
     set_pattern_to_ctx d.name value' ctx
-    
 
   let interpret (p : Ast.program) = List.fold_left interpret_decl initial_stack p
 

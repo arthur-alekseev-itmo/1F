@@ -15,7 +15,7 @@ module Builtins = struct
   let print =
     let inner = function
       | VString s ->
-          Format.printf "%s" s;
+          let () = print_endline s in
           VUnit
       | _ -> failwith "Cannot print string"
     in
@@ -53,7 +53,7 @@ module Builtins = struct
       ("<>", polycompare_base (( <> ) 0));
       (">=", polycompare_base (( <> ) (-1)));
       ("<=", polycompare_base (( <> ) 1));
-      ("print", print);
+      ("напечатай", print);
     ]
 
   let builtins = builtin_name_pairs |> List.to_seq |> StringMap.of_seq

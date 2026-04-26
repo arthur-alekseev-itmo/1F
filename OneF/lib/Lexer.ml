@@ -47,7 +47,6 @@ module Lexer = struct
     | float_reg -> ok @@ FloatLiteral (float_of_string (Sedlexing.Utf8.lexeme buf))
     | Plus digit -> ok @@ IntLiteral (int_of_string (Sedlexing.Utf8.lexeme buf))
     | operator_reg -> ok @@ Operator (Sedlexing.Utf8.lexeme buf)
-    | "()" -> ok Unit
     | id -> ok @@ get_id (Sedlexing.Utf8.lexeme buf)
     | eof -> ok Eof
     | _ ->
