@@ -6,7 +6,7 @@
  (name test_lexer)
  (modules test_lexer)
  (public_name test_lexer)
- (libraries OneF stdio)
+ (libraries OneF)
  (instrumentation
   (backend bisect_ppx)))
 
