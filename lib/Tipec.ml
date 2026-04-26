@@ -214,7 +214,7 @@ module Tipec = struct
         unify cond_type TBool;
         unify then_type else_type;
         apply_subst !subst_v then_type
-    | LetIn (recursive, arg, decl, body) ->
+    | LetIn (_recursive, _arg, _decl, _body) ->
         failwith "TODO"
     | TupleInit _ -> failwith "TODO"
 
