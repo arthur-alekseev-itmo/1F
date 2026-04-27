@@ -166,6 +166,7 @@ module Tipec = struct
           |> List.fold_left merge_pattern_env StringMap.empty
         in
         (TTuple types, env)
+    | _ -> failwith "TODO"
 
   let literal_type (literal : literal) =
     match literal with
@@ -222,7 +223,7 @@ module Tipec = struct
         unify then_type else_type;
         apply_subst !subst_v then_type
     | LetIn (_recursive, _arg, _decl, _body) -> failwith "TODO"
-    | TupleInit _ -> failwith "TODO"
+    | _ -> failwith "TODO"
 
   and infer_decl_binding env (decl : decl) =
     if decl.recursive then

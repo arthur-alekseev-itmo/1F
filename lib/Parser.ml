@@ -109,6 +109,7 @@ module Parser = struct
     in
     let inner op =
       match op with
+      | Semicolon when check_prefix ";" -> return @@ continue ";"
       | Operator x when check_prefix x -> return @@ continue x
       | _ -> fail "Not an operator"
     in
@@ -117,11 +118,23 @@ module Parser = struct
 
   let parse_id =
     let* t = parse_token (fun _ -> true) in
-    match t with SmallIdentifier i -> return @@ i | _ -> fail "Not an identifier"
+    match t with
+    | SmallIdentifier i -> return @@ i
+    | _ -> fail "Not an identifier"
+
+  let parse_big_id =
+    let* t = parse_token (fun _ -> true) in
+    match t with
+    | BigIdentifier i -> return @@ i
+    | _ -> fail "Not an identifier"
 
   let parse_value =
     let* id = parse_id in
     return @@ Value id
+
+  let parse_ctor =
+    let* name = parse_big_id in
+    return @@ Ctor name
 
   let parse_numeric =
     let* t = parse_token (fun _ -> true) in
@@ -134,12 +147,23 @@ module Parser = struct
 
   let parse_operator_literal =
     let* token = parens (parse_token (fun _ -> true)) in
-    match token with Operator x -> return x | _ -> fail "Not an operator"
+    match token with 
+    | Operator x -> return x
+    | Semicolon -> return ";"
+    | _ -> fail "Not an operator"
 
   let rec parse_pattern input =
     let operator_id =
       let* lit = parse_operator_literal in
       return @@ PatVariable lit
+    in
+    let pat_wild = token Wildcard *> return PatWildcard in
+    let ctor_pattern =
+      let* ctor_name = parse_big_id in
+      let* pat_option = wrap parse_pattern in
+      let unit = PatUnit in
+      let pat = Option.value ~default:unit pat_option in
+      return @@ PatCtor (ctor_name, pat)
     in
     let just_id = parse_id >>= fun id -> return @@ PatVariable id in
     let others =
@@ -151,7 +175,7 @@ module Parser = struct
       | [ x ] -> return x
       | xs -> return @@ PatTuple xs
     in
-    (just_id <|> operator_id <|> others) input
+    (pat_wild <|> just_id <|> operator_id <|> ctor_pattern <|> others) input
 
   let parse_operator_value =
     parse_operator_literal >>= fun v -> return @@ Value v
@@ -170,15 +194,42 @@ module Parser = struct
 
   and parse_application input =
     let inner =
-      let* callee = parse_atom in
-      let* args = some parse_atom in
+      let* callee = parse_atom_or_access in
+      let* args = some parse_atom_or_access in
       return @@ List.fold_left (fun c a -> Application (c, a)) callee args
     in
     inner input
 
+  and parse_atom_or_access input = parse_field_access input
+
+  and parse_record_init input =
+    let field_assignment =
+      let* field = parse_id in
+      let* value = token (Operator "=") *> parse_expr in
+      return (field, value)
+    in
+    let inner =
+      let semi = token Semicolon in
+      let content = sep_by ~inner_parser:field_assignment ~sep_parser:semi in
+      let* result = token LCbr *> content <* token RCbr in
+      return @@ RecordInit result
+    in
+    inner input
+
+  and parse_field_access input =
+    let inner =
+      let* atom = parse_atom in
+      let dot = token Dot in
+      let others = sep_by ~inner_parser:parse_id ~sep_parser:dot in
+      let* fields = token Dot *> others in
+      return @@ List.fold_left (fun acc x -> FieldAccess (acc, x)) atom fields
+    in
+    (inner <|> parse_atom) input
+
   and parse_atom input =
-    (parse_ite <|> parse_operator_value <|> parse_tuple <|> parse_value
-   <|> parse_numeric <|> parse_let)
+    (parse_match <|> parse_ctor <|> parse_ite <|> parse_operator_value
+   <|> parse_tuple <|> parse_value <|> parse_numeric <|> parse_let
+   <|> parse_record_init)
       input
 
   and parse_let input =
@@ -207,16 +258,40 @@ module Parser = struct
     in
     inner input
 
+  and match_branch input =
+    let inner =
+      let* pattern = parse_pattern in
+      let* when_clause = wrap (token When *> parse_expr) in
+      let* result = token Arrow *> parse_expr in
+      return @@ { pattern; when_clause; result }
+    in
+    inner input
+
+  and parse_match input =
+    let inner =
+      let* scrutinee = token Match *> parse_expr <* token With in
+      let* first_branch = (wrap @@ token VBar) *> match_branch in
+      let* other_branches = many @@ (token VBar *> match_branch) in
+      let branches = first_branch :: other_branches in
+      return @@ Match (scrutinee, branches)
+    in
+    inner input
+
   and parse_expr input =
-    let l1_expr = parse_application <|> parse_atom in
+    let l1_expr = parse_application <|> parse_field_access in
     let operators =
       [
+        lN_operator [ "!"; "~" ];
+        lN_operator [ "#" ];
+        (* TODO: These ones above are higher than application! *)
         lN_operator [ "*"; "/" ];
         lN_operator [ "+"; "-" ];
         lN_operator [ "^"; "@" ];
+        lN_operator [ "<"; ">"; "=" ];
         lN_operator [ "&" ];
         lN_operator [ "|" ];
-        lN_operator [ "<"; ">"; "=" ];
+        lN_operator [ "," ];
+        lN_operator [ ";" ];
       ]
     in
     let parser = List.fold_left chainl1 l1_expr operators in

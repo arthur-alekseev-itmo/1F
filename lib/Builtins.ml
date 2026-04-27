@@ -17,7 +17,7 @@ module Builtins = struct
       | VString s ->
           let () = print_endline s in
           VUnit
-      | _ -> failwith "Cannot print string"
+      | v -> failwith @@ "Cannot print non string: " ^ Runtime.Runtime.value_to_string v
     in
     VBuiltin inner
 

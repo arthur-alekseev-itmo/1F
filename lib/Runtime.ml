@@ -13,23 +13,23 @@ module Runtime = struct
     | VBool of bool
     | VVariant of variant_data
     | VList of value list
-    | VRecord of (string, value) Hashtbl.t
+    | VRecord of value StringMap.t
     | VBuiltin of (value -> value)
 
-  and variant_data = { tag : int; value : value }
+  and variant_data = { tag : string; value : value }
   and closure_data = { f : Ast.lambda_body; captured : value StringMap.t }
 
   type stackframe = { parent : stackframe option; locals : value StringMap.t }
 
-  let value_to_string = function
+  let rec value_to_string = function
     | VClosure _ -> "<closure>"
     | VString s -> s
     | VInt i -> string_of_int i
     | VFloat f -> string_of_float f
     | VTuple _ -> "<tuple>"
     | VUnit -> "()"
-    | VBool b -> string_of_bool b
-    | VVariant _ -> "<variant>"
+    | VBool b -> if b then "да" else "нет"
+    | VVariant v -> Format.sprintf "%s %s" v.tag (value_to_string v.value)
     | VList _ -> "<list>"
     | VRecord _ -> "<record>"
     | VBuiltin _ -> "<builtin>"

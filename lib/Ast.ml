@@ -1,5 +1,10 @@
 module Ast = struct
-  type pattern = PatUnit | PatVariable of string | PatTuple of pattern list
+  type pattern =
+    | PatUnit
+    | PatVariable of string
+    | PatTuple of pattern list
+    | PatCtor of string * pattern
+    | PatWildcard
 
   type literal =
     | IntLiteral of int
@@ -19,6 +24,17 @@ module Ast = struct
     | Lambda of lambda_body
     | IfThenElse of ite_body
     | Application of expr * expr
+    | Ctor of string
+    | RecordInit of (string * expr) list
+    | RecordUpdate of expr * (string * expr) list
+    | FieldAccess of expr * string
+    | Match of expr * match_pattern_branch list
+
+  and match_pattern_branch = {
+    pattern : pattern;
+    when_clause : expr option;
+    result : expr;
+  }
 
   and decl = { name : pattern; recursive : bool; body : expr }
 

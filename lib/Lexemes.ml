@@ -33,6 +33,9 @@ module Lexemes = struct
     | Struct
     | End
     | Open
+    | Match
+    | With
+    | When
   [@@deriving show]
 
   let to_string = function
@@ -70,6 +73,9 @@ module Lexemes = struct
     | Struct -> "структура"
     | End -> "конец"
     | Open -> "открыть"
+    | Match -> "сопоставить"
+    | With -> "с"
+    | When -> "когда"
 
   let write_file (path : string) (content : string) =
     try

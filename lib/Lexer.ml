@@ -41,6 +41,9 @@ module Lexer = struct
     | "структура" -> Struct
     | "конец" -> End
     | "открыть" -> Open
+    | "сопоставить" -> Match
+    | "с" -> With
+    | "когда" -> When
     | s when is_capital s -> BigIdentifier s
     | s -> SmallIdentifier s
 
@@ -53,7 +56,15 @@ module Lexer = struct
         ok @@ StringLiteral (String.sub s 1 (String.length s - 2))
     | "(" -> ok LPar
     | ")" -> ok RPar
+    | "{" -> ok LCbr
+    | "}" -> ok RCbr
+    | "[" -> ok LBr
+    | "]" -> ok RBr
     | "," -> ok Comma
+    | ";" -> ok Semicolon
+    | "." -> ok Dot
+    | "|" -> ok VBar
+    | "_" -> ok Wildcard
     | float_reg ->
         ok @@ FloatLiteral (float_of_string (Sedlexing.Utf8.lexeme buf))
     | Plus digit -> ok @@ IntLiteral (int_of_string (Sedlexing.Utf8.lexeme buf))
