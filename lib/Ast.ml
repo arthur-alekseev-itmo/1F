@@ -5,6 +5,8 @@ module Ast = struct
     | PatTuple of pattern list
     | PatCtor of string * pattern
     | PatWildcard
+    | PatListCons of pattern * pattern
+    | PatEmptyList
 
   type literal =
     | IntLiteral of int
@@ -29,6 +31,7 @@ module Ast = struct
     | RecordUpdate of expr * (string * expr) list
     | FieldAccess of expr * string
     | Match of expr * match_pattern_branch list
+    | EmptyList
 
   and match_pattern_branch = {
     pattern : pattern;

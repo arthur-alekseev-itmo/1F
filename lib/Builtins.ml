@@ -17,7 +17,9 @@ module Builtins = struct
       | VString s ->
           let () = print_endline s in
           VUnit
-      | v -> failwith @@ "Cannot print non string: " ^ Runtime.Runtime.value_to_string v
+      | v ->
+          failwith @@ "Cannot print non string: "
+          ^ Runtime.Runtime.value_to_string v
     in
     VBuiltin inner
 
@@ -40,6 +42,13 @@ module Builtins = struct
     in
     binop_base inner
 
+  let list_const = 
+    let inner a b =
+      match (a, b) with
+      | v, VList l -> VList (v :: l)
+      | _ -> failwith "Cannot append to non list"
+    in binop_base inner
+
   let builtin_name_pairs =
     [
       ("+", int_binop_base ( + ));
@@ -53,6 +62,7 @@ module Builtins = struct
       ("<>", polycompare_base (( <> ) 0));
       (">=", polycompare_base (( <> ) (-1)));
       ("<=", polycompare_base (( <> ) 1));
+      ("::", list_const);
       ("напечатай", print);
     ]
 

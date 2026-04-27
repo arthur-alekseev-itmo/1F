@@ -14,7 +14,7 @@ module Lexer = struct
   let op_char =
     [%sedlex.regexp?
       ( '!' | '$' | '%' | '&' | '*' | '+' | '-' | '.' | '/' | ':' | '<' | '='
-      | '>' | '?' | '@' | '^' | '|' | '~' )]
+      | '>' | '?' | '@' | '^' | '|' | '~' | ';' )]
 
   let operator_reg = [%sedlex.regexp? Plus op_char]
 

@@ -26,6 +26,8 @@ module Interpreter = struct
 
   let rec set_pattern (p : Ast.pattern) (e : value) vars =
     match (p, e) with
+    | PatListCons (ph, pt), VList (vh :: vt) ->
+        set_pattern ph vh vars >>= fun vars' -> set_pattern pt (VList vt) vars'
     | PatWildcard, _ -> Ok vars
     | PatUnit, VUnit -> Ok vars
     | PatVariable name, value -> Ok (StringMap.add name value vars)
@@ -74,6 +76,7 @@ module Interpreter = struct
         let kvs = List.map (fun (k, v) -> (k, eval_expr v ctx)) fields in
         kvs |> List.to_seq |> StringMap.of_seq |> fun m -> VRecord m
     | RecordUpdate _ -> failwith "TODO"
+    | EmptyList -> VList []
 
   and eval_match (scrutinee : value) branches ctx =
     let try_branch (branch : Ast.match_pattern_branch) =
@@ -128,9 +131,11 @@ module Interpreter = struct
       | Parser.Parser.Parsed (r, []) ->
           eval_expr r initial_stack |> value_to_string |> print_endline
       | Parser.Parser.Failed f -> failwith f
-      | Parser.Parser.Parsed (_, t) -> 
-        let message = List.map Lexemes.Lexemes.to_string t |> String.concat "; " in
-        failwith message
+      | Parser.Parser.Parsed (_, t) ->
+          let message =
+            List.map Lexemes.Lexemes.to_string t |> String.concat "; "
+          in
+          failwith message
       | _ -> failwith "TODO"
     in
     Lexer.Lexer.lex_string s

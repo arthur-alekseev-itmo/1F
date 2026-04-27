@@ -109,7 +109,6 @@ module Parser = struct
     in
     let inner op =
       match op with
-      | Semicolon when check_prefix ";" -> return @@ continue ";"
       | Operator x when check_prefix x -> return @@ continue x
       | _ -> fail "Not an operator"
     in
@@ -147,12 +146,17 @@ module Parser = struct
 
   let parse_operator_literal =
     let* token = parens (parse_token (fun _ -> true)) in
-    match token with 
-    | Operator x -> return x
-    | Semicolon -> return ";"
-    | _ -> fail "Not an operator"
+    match token with Operator x -> return x | _ -> fail "Not an operator"
 
   let rec parse_pattern input =
+    let inner =
+      let* atom = parse_pattern_atom in
+      let* conss = many @@ (token (Operator "::") *> parse_pattern_atom) in
+      return @@ List.fold_left (fun acc x -> PatListCons (acc, x)) atom conss
+    in
+    inner input
+
+  and parse_pattern_atom input =
     let operator_id =
       let* lit = parse_operator_literal in
       return @@ PatVariable lit
@@ -226,10 +230,20 @@ module Parser = struct
     in
     (inner <|> parse_atom) input
 
+  and parse_list_construction input =
+    let inner =
+      let semi = token Semicolon in
+      let cons a b = Application (Application (Value "::", b), a) in
+      let elements = sep_by ~inner_parser:parse_expr ~sep_parser:semi in
+      let* res = token LBr *> elements <* token RBr in
+      return @@ List.fold_left cons EmptyList (List.rev res)
+    in
+    inner input
+
   and parse_atom input =
-    (parse_match <|> parse_ctor <|> parse_ite <|> parse_operator_value
-   <|> parse_tuple <|> parse_value <|> parse_numeric <|> parse_let
-   <|> parse_record_init)
+    (parse_list_construction <|> parse_lambda <|> parse_match <|> parse_ctor
+   <|> parse_ite <|> parse_operator_value <|> parse_tuple <|> parse_value
+   <|> parse_numeric <|> parse_let <|> parse_record_init)
       input
 
   and parse_let input =
@@ -267,6 +281,15 @@ module Parser = struct
     in
     inner input
 
+  and parse_lambda input =
+    let inner =
+      let* _skip = token Lambda in
+      let* args = some parse_pattern in
+      let* body = token Arrow *> parse_expr in
+      return @@ List.fold_left (fun body arg -> Lambda { body; arg }) body args
+    in
+    inner input
+
   and parse_match input =
     let inner =
       let* scrutinee = token Match *> parse_expr <* token With in
@@ -286,6 +309,7 @@ module Parser = struct
         (* TODO: These ones above are higher than application! *)
         lN_operator [ "*"; "/" ];
         lN_operator [ "+"; "-" ];
+        lN_operator [ ":" ]; (* TODO: Right assoc*)
         lN_operator [ "^"; "@" ];
         lN_operator [ "<"; ">"; "=" ];
         lN_operator [ "&" ];

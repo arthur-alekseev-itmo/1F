@@ -30,19 +30,17 @@ module Runtime = struct
     | VUnit -> "()"
     | VBool b -> if b then "да" else "нет"
     | VVariant v -> Format.sprintf "%s %s" v.tag (value_to_string v.value)
-    | VList _ -> "<list>"
-    | VRecord _ -> "<record>"
+    | VList l ->
+        List.map value_to_string l |> String.concat "; "
+        |> Format.sprintf "[%s]"
+    | VRecord r ->
+        let serialize_field (f, v) =
+          Format.sprintf "%s = %s" f (value_to_string v)
+        in
+        let fields =
+          StringMap.to_seq r |> List.of_seq |> List.map serialize_field
+          |> String.concat "; "
+        in
+        Format.sprintf "{ %s }" fields
     | VBuiltin _ -> "<builtin>"
-
-  let rec print_context ctx =
-    let hashtbl_to_string htbl =
-      StringMap.fold
-        (fun k v acc ->
-          if acc = "" then Printf.sprintf "\"%s\": %s" k (value_to_string v)
-          else Printf.sprintf "%s, \"%s\": %s" acc k (value_to_string v))
-        htbl ""
-      |> fun s -> "{ " ^ s ^ " }"
-    in
-    hashtbl_to_string ctx.locals |> print_endline;
-    match ctx.parent with None -> () | Some p -> print_context p
 end
