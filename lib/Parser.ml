@@ -169,6 +169,7 @@ module Parser = struct
       let pat = Option.value ~default:unit pat_option in
       return @@ PatCtor (ctor_name, pat)
     in
+    let pat_empty_list = token LBr *> return PatEmptyList <* token RBr in
     let just_id = parse_id >>= fun id -> return @@ PatVariable id in
     let others =
       let* in_parens =
@@ -179,7 +180,7 @@ module Parser = struct
       | [ x ] -> return x
       | xs -> return @@ PatTuple xs
     in
-    (pat_wild <|> just_id <|> operator_id <|> ctor_pattern <|> others) input
+    (pat_empty_list <|> pat_wild <|> just_id <|> operator_id <|> ctor_pattern <|> others) input
 
   let parse_operator_value =
     parse_operator_literal >>= fun v -> return @@ Value v
@@ -225,10 +226,11 @@ module Parser = struct
       let* atom = parse_atom in
       let dot = token Dot in
       let others = sep_by ~inner_parser:parse_id ~sep_parser:dot in
-      let* fields = token Dot *> others in
+      let* fields = wrap @@ token Dot *> others in
+      let fields = Option.value ~default:[] fields in
       return @@ List.fold_left (fun acc x -> FieldAccess (acc, x)) atom fields
     in
-    (inner <|> parse_atom) input
+    inner input
 
   and parse_list_construction input =
     let inner =

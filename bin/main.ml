@@ -1,5 +1,4 @@
-open OneF.Lexer
-open OneF.Lexemes
+open OneF.Interpreter
 
 let input_file = ref "вход.1ф"
 let output_file = ref None
@@ -22,24 +21,22 @@ let speclist =
 
 let usage_msg = "1ф --input <path> [--output <path>]"
 
-let dump_tokens tokens =
-  let output_path = Option.value ~default:(!input_file ^ ".out") !output_file in
-  match !use_stdout with
-  | false -> Lexemes.dump_file output_path tokens
-  | true -> Lexemes.dump tokens |> print_endline |> Result.ok
+let read_file path =
+  try In_channel.with_open_text path In_channel.input_all |> Result.ok
+  with Sys_error e ->
+    Format.sprintf "Error while reading file: %s" e |> Result.error
 
-let read_tokens () =
+let read_string () =
   match !use_stdin with
-  | true ->
-      let content = In_channel.input_all In_channel.stdin in
-      Lexer.lex_string content
-  | false -> Lexer.lex_file !input_file
+  | true -> Ok (In_channel.input_all In_channel.stdin)
+  | false -> read_file !input_file
 
 let main () =
-  let ( let* ) = Result.bind in
+  let (let*) = Result.bind in
   Arg.parse speclist ignore usage_msg;
-  let* tokens = read_tokens () in
-  dump_tokens tokens
+  let* input = read_string () in
+  Interpreter.eval_string input;
+  Ok ()
 
 let () =
   match main () with

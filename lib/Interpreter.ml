@@ -26,6 +26,7 @@ module Interpreter = struct
 
   let rec set_pattern (p : Ast.pattern) (e : value) vars =
     match (p, e) with
+    | PatEmptyList, VList [] -> Ok vars
     | PatListCons (ph, pt), VList (vh :: vt) ->
         set_pattern ph vh vars >>= fun vars' -> set_pattern pt (VList vt) vars'
     | PatWildcard, _ -> Ok vars
@@ -129,6 +130,7 @@ module Interpreter = struct
   let eval_string s =
     let run = function
       | Parser.Parser.Parsed (r, []) ->
+          print_endline "SSS";
           eval_expr r initial_stack |> value_to_string |> print_endline
       | Parser.Parser.Failed f -> failwith f
       | Parser.Parser.Parsed (_, t) ->
