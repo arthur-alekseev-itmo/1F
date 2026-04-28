@@ -5,7 +5,7 @@ module Runtime = struct
 
   type value =
     | VClosure of closure_data
-    | VString of string
+    | VString of CCUtf8_string.t
     | VInt of int
     | VFloat of float
     | VTuple of value list
@@ -15,18 +15,26 @@ module Runtime = struct
     | VList of value list
     | VRecord of value StringMap.t
     | VBuiltin of (value -> value)
+    | VChar of Uchar.t
 
   and variant_data = { tag : string; value : value }
   and closure_data = { f : Ast.lambda_body; captured : value StringMap.t }
 
   type stackframe = { parent : stackframe option; locals : value StringMap.t }
 
+  let uchar_to_string u =
+    let b = Buffer.create 4 in
+    Buffer.add_utf_8_uchar b u;
+    Buffer.contents b
+
   let rec value_to_string = function
     | VClosure _ -> "<closure>"
-    | VString s -> s
+    | VString s -> CCUtf8_string.to_string s
     | VInt i -> string_of_int i
     | VFloat f -> string_of_float f
-    | VTuple _ -> "<tuple>"
+    | VTuple t ->
+        List.map value_to_string t |> String.concat ", "
+        |> Format.sprintf "(%s)"
     | VUnit -> "()"
     | VBool b -> if b then "да" else "нет"
     | VVariant v -> Format.sprintf "%s %s" v.tag (value_to_string v.value)
@@ -43,4 +51,5 @@ module Runtime = struct
         in
         Format.sprintf "{ %s }" fields
     | VBuiltin _ -> "<builtin>"
+    | VChar c -> uchar_to_string c
 end

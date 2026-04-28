@@ -32,7 +32,7 @@ let read_string () =
   | false -> read_file !input_file
 
 let main () =
-  let (let*) = Result.bind in
+  let ( let* ) = Result.bind in
   Arg.parse speclist ignore usage_msg;
   let* input = read_string () in
   Interpreter.eval_string input;

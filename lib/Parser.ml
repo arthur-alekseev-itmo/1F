@@ -142,6 +142,7 @@ module Parser = struct
     | FloatLiteral x -> return @@ Const (FloatLiteral x)
     | StringLiteral x -> return @@ Const (StringLiteral x)
     | BoolLiteral x -> return @@ Const (BoolLiteral x)
+    | CharLiteral x -> return @@ Const (CharLiteral x)
     | _ -> fail "Not a literal"
 
   let parse_operator_literal =
@@ -180,7 +181,9 @@ module Parser = struct
       | [ x ] -> return x
       | xs -> return @@ PatTuple xs
     in
-    (pat_empty_list <|> pat_wild <|> just_id <|> operator_id <|> ctor_pattern <|> others) input
+    (pat_empty_list <|> pat_wild <|> just_id <|> operator_id <|> ctor_pattern
+   <|> others)
+      input
 
   let parse_operator_value =
     parse_operator_literal >>= fun v -> return @@ Value v
@@ -200,7 +203,7 @@ module Parser = struct
   and parse_application input =
     let inner =
       let* callee = parse_atom_or_access in
-      let* args = some parse_atom_or_access in
+      let* args = many parse_atom_or_access in
       return @@ List.fold_left (fun c a -> Application (c, a)) callee args
     in
     inner input
@@ -226,7 +229,7 @@ module Parser = struct
       let* atom = parse_atom in
       let dot = token Dot in
       let others = sep_by ~inner_parser:parse_id ~sep_parser:dot in
-      let* fields = wrap @@ token Dot *> others in
+      let* fields = wrap @@ (token Dot *> others) in
       let fields = Option.value ~default:[] fields in
       return @@ List.fold_left (fun acc x -> FieldAccess (acc, x)) atom fields
     in
@@ -303,7 +306,7 @@ module Parser = struct
     inner input
 
   and parse_expr input =
-    let l1_expr = parse_application <|> parse_field_access in
+    let l1_expr = parse_application in
     let operators =
       [
         lN_operator [ "!"; "~" ];
@@ -311,7 +314,8 @@ module Parser = struct
         (* TODO: These ones above are higher than application! *)
         lN_operator [ "*"; "/" ];
         lN_operator [ "+"; "-" ];
-        lN_operator [ ":" ]; (* TODO: Right assoc*)
+        lN_operator [ ":" ];
+        (* TODO: Right assoc*)
         lN_operator [ "^"; "@" ];
         lN_operator [ "<"; ">"; "=" ];
         lN_operator [ "&" ];

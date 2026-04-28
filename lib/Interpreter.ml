@@ -19,10 +19,11 @@ module Interpreter = struct
   let eval_literal (e : Ast.literal) =
     match e with
     | IntLiteral x -> VInt x
-    | StringLiteral x -> VString x
+    | StringLiteral x -> VString (CCUtf8_string.of_string_exn x)
     | BoolLiteral x -> VBool x
     | UnitLiteral -> VUnit
     | FloatLiteral x -> VFloat x
+    | CharLiteral x -> VChar x
 
   let rec set_pattern (p : Ast.pattern) (e : value) vars =
     match (p, e) with
@@ -55,8 +56,9 @@ module Interpreter = struct
         let arg' = eval_expr arg ctx in
         eval_application callee' arg' ctx
     | Value name -> search_in_ctx name ctx
-    | LetIn (_recursive, pat, expr, body) ->
+    | LetIn (recursive, pat, expr, body) ->
         (* TODO: REC *)
+        let ctx = if recursive then ctx else ctx in
         let expr' = eval_expr expr ctx in
         let ctx' = set_pattern_to_ctx pat expr' ctx in
         eval_expr body ctx'
@@ -118,7 +120,7 @@ module Interpreter = struct
         let ctx' = { parent = Some ctx; locals = cap' } in
         eval_expr closure.f.body ctx'
     | VVariant v when v.value = VUnit -> VVariant { v with value = arg }
-    | _ -> failwith "Cannot apply non-function"
+    | e -> failwith @@ "Cannot apply non-function: " ^ value_to_string e
 
   let interpret_decl ctx (d : Ast.decl) =
     let value' = eval_expr d.body ctx in
@@ -130,7 +132,6 @@ module Interpreter = struct
   let eval_string s =
     let run = function
       | Parser.Parser.Parsed (r, []) ->
-          print_endline "SSS";
           eval_expr r initial_stack |> value_to_string |> print_endline
       | Parser.Parser.Failed f -> failwith f
       | Parser.Parser.Parsed (_, t) ->

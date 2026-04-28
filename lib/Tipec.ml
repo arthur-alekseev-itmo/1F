@@ -6,6 +6,7 @@ module Tipec = struct
     | TFloat
     | TString
     | TBool
+    | TChar
     | TSkib
     | TVar of int
     | TFun of typ * typ
@@ -38,7 +39,7 @@ module Tipec = struct
 
   let rec apply_subst subst t =
     match t with
-    | TInt | TFloat | TString | TBool | TSkib -> t
+    | TInt | TFloat | TString | TBool | TSkib | TChar -> t
     | TTuple ts -> TTuple (List.map (apply_subst subst) ts)
     | TFun (t1, t2) -> TFun (apply_subst subst t1, apply_subst subst t2)
     | TVar v -> (
@@ -62,7 +63,7 @@ module Tipec = struct
 
   let rec free_type_vars__unsafe t =
     match t with
-    | TInt | TFloat | TString | TBool | TSkib -> IntSet.empty
+    | TInt | TFloat | TString | TBool | TSkib | TChar -> IntSet.empty
     | TVar v -> IntSet.singleton v
     | TFun (t1, t2) ->
         IntSet.union (free_type_vars__unsafe t1) (free_type_vars__unsafe t2)
@@ -105,7 +106,7 @@ module Tipec = struct
     in
     let rec replace t =
       match t with
-      | TInt | TFloat | TString | TBool | TSkib -> t
+      | TInt | TFloat | TString | TBool | TSkib | TChar -> t
       | TVar v -> (
           match IntMap.find_opt v mapping with Some t' -> t' | None -> t)
       | TFun (t1, t2) -> TFun (replace t1, replace t2)
@@ -175,6 +176,7 @@ module Tipec = struct
     | BoolLiteral _ -> TBool
     | UnitLiteral -> TSkib
     | FloatLiteral _ -> TFloat
+    | CharLiteral _ -> TChar
 
   let generalise_pattern_env outer_env pattern_env =
     StringMap.map

@@ -13,6 +13,7 @@ module Ast = struct
     | FloatLiteral of float
     | StringLiteral of string
     | BoolLiteral of bool
+    | CharLiteral of Uchar.t
     | UnitLiteral
 
   type ite_body = { cond : expr; thenBranch : expr; elseBranch : expr }
