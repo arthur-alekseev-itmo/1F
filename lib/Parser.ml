@@ -117,11 +117,23 @@ module Parser = struct
 
   let parse_id =
     let* t = parse_token (fun _ -> true) in
-    match t with SmallIdentifier i -> return @@ i | _ -> fail "Not an identifier"
+    match t with
+    | SmallIdentifier i -> return @@ i
+    | _ -> fail "Not an identifier"
+
+  let parse_big_id =
+    let* t = parse_token (fun _ -> true) in
+    match t with
+    | BigIdentifier i -> return @@ i
+    | _ -> fail "Not an identifier"
 
   let parse_value =
     let* id = parse_id in
     return @@ Value id
+
+  let parse_ctor =
+    let* name = parse_big_id in
+    return @@ Ctor name
 
   let parse_numeric =
     let* t = parse_token (fun _ -> true) in
@@ -130,6 +142,7 @@ module Parser = struct
     | FloatLiteral x -> return @@ Const (FloatLiteral x)
     | StringLiteral x -> return @@ Const (StringLiteral x)
     | BoolLiteral x -> return @@ Const (BoolLiteral x)
+    | CharLiteral x -> return @@ Const (CharLiteral x)
     | _ -> fail "Not a literal"
 
   let parse_operator_literal =
@@ -137,10 +150,27 @@ module Parser = struct
     match token with Operator x -> return x | _ -> fail "Not an operator"
 
   let rec parse_pattern input =
+    let inner =
+      let* atom = parse_pattern_atom in
+      let* conss = many @@ (token (Operator "::") *> parse_pattern_atom) in
+      return @@ List.fold_left (fun acc x -> PatListCons (acc, x)) atom conss
+    in
+    inner input
+
+  and parse_pattern_atom input =
     let operator_id =
       let* lit = parse_operator_literal in
       return @@ PatVariable lit
     in
+    let pat_wild = token Wildcard *> return PatWildcard in
+    let ctor_pattern =
+      let* ctor_name = parse_big_id in
+      let* pat_option = wrap parse_pattern in
+      let unit = PatUnit in
+      let pat = Option.value ~default:unit pat_option in
+      return @@ PatCtor (ctor_name, pat)
+    in
+    let pat_empty_list = token LBr *> return PatEmptyList <* token RBr in
     let just_id = parse_id >>= fun id -> return @@ PatVariable id in
     let others =
       let* in_parens =
@@ -151,7 +181,9 @@ module Parser = struct
       | [ x ] -> return x
       | xs -> return @@ PatTuple xs
     in
-    (just_id <|> operator_id <|> others) input
+    (pat_empty_list <|> pat_wild <|> just_id <|> operator_id <|> ctor_pattern
+   <|> others)
+      input
 
   let parse_operator_value =
     parse_operator_literal >>= fun v -> return @@ Value v
@@ -170,15 +202,53 @@ module Parser = struct
 
   and parse_application input =
     let inner =
-      let* callee = parse_atom in
-      let* args = some parse_atom in
+      let* callee = parse_atom_or_access in
+      let* args = many parse_atom_or_access in
       return @@ List.fold_left (fun c a -> Application (c, a)) callee args
     in
     inner input
 
+  and parse_atom_or_access input = parse_field_access input
+
+  and parse_record_init input =
+    let field_assignment =
+      let* field = parse_id in
+      let* value = token (Operator "=") *> parse_expr in
+      return (field, value)
+    in
+    let inner =
+      let semi = token Semicolon in
+      let content = sep_by ~inner_parser:field_assignment ~sep_parser:semi in
+      let* result = token LCbr *> content <* token RCbr in
+      return @@ RecordInit result
+    in
+    inner input
+
+  and parse_field_access input =
+    let inner =
+      let* atom = parse_atom in
+      let dot = token Dot in
+      let others = sep_by ~inner_parser:parse_id ~sep_parser:dot in
+      let* fields = wrap @@ (token Dot *> others) in
+      let fields = Option.value ~default:[] fields in
+      return @@ List.fold_left (fun acc x -> FieldAccess (acc, x)) atom fields
+    in
+    inner input
+
+  and parse_list_construction input =
+    let inner =
+      let semi = token Semicolon in
+      let cons a b = Application (Application (Value "::", b), a) in
+      let elements = sep_by ~inner_parser:parse_expr ~sep_parser:semi in
+      let* res = token LBr *> elements <* token RBr in
+      return @@ List.fold_left cons EmptyList (List.rev res)
+    in
+    inner input
+
   and parse_atom input =
-    (parse_ite <|> parse_operator_value <|> parse_tuple <|> parse_value
-   <|> parse_numeric <|> parse_let)
+    (parse_list_construction <|> parse_lambda <|> parse_match <|> parse_ctor
+   <|> parse_ite <|> parse_operator_value <|> parse_tuple <|> parse_value
+   <|> parse_numeric <|> parse_let <|> parse_record_init)
       input
 
   and parse_let input =
@@ -207,16 +277,51 @@ module Parser = struct
     in
     inner input
 
+  and match_branch input =
+    let inner =
+      let* pattern = parse_pattern in
+      let* when_clause = wrap (token When *> parse_expr) in
+      let* result = token Arrow *> parse_expr in
+      return @@ { pattern; when_clause; result }
+    in
+    inner input
+
+  and parse_lambda input =
+    let inner =
+      let* _skip = token Lambda in
+      let* args = some parse_pattern in
+      let* body = token Arrow *> parse_expr in
+      return @@ List.fold_left (fun body arg -> Lambda { body; arg }) body args
+    in
+    inner input
+
+  and parse_match input =
+    let inner =
+      let* scrutinee = token Match *> parse_expr <* token With in
+      let* first_branch = (wrap @@ token VBar) *> match_branch in
+      let* other_branches = many @@ (token VBar *> match_branch) in
+      let branches = first_branch :: other_branches in
+      return @@ Match (scrutinee, branches)
+    in
+    inner input
+
   and parse_expr input =
-    let l1_expr = parse_application <|> parse_atom in
+    let l1_expr = parse_application in
     let operators =
       [
+        lN_operator [ "!"; "~" ];
+        lN_operator [ "#" ];
+        (* TODO: These ones above are higher than application! *)
         lN_operator [ "*"; "/" ];
         lN_operator [ "+"; "-" ];
+        lN_operator [ ":" ];
+        (* TODO: Right assoc*)
         lN_operator [ "^"; "@" ];
+        lN_operator [ "<"; ">"; "=" ];
         lN_operator [ "&" ];
         lN_operator [ "|" ];
-        lN_operator [ "<"; ">"; "=" ];
+        lN_operator [ "," ];
+        lN_operator [ ";" ];
       ]
     in
     let parser = List.fold_left chainl1 l1_expr operators in

@@ -4,6 +4,7 @@ module Lexemes = struct
     | FloatLiteral of float
     | StringLiteral of string
     | BoolLiteral of bool
+    | CharLiteral of Uchar.t
     | Let
     | Rec
     | In
@@ -33,12 +34,20 @@ module Lexemes = struct
     | Struct
     | End
     | Open
-  [@@deriving show]
+    | Match
+    | With
+    | When
+
+  let uchar_to_string u =
+    let b = Buffer.create 4 in
+    Buffer.add_utf_8_uchar b u;
+    Buffer.contents b
 
   let to_string = function
     | IntLiteral i -> Format.sprintf "целое число %d" i
     | FloatLiteral f -> Format.sprintf "реальное число %f" f
     | StringLiteral s -> Format.sprintf "строчка \"%s\"" s
+    | CharLiteral c -> Format.sprintf "символ %s" (uchar_to_string c)
     | BoolLiteral true -> "да"
     | BoolLiteral false -> "нет"
     | Let -> "пусть"
@@ -70,6 +79,9 @@ module Lexemes = struct
     | Struct -> "структура"
     | End -> "конец"
     | Open -> "открыть"
+    | Match -> "сопоставить"
+    | With -> "с"
+    | When -> "когда"
 
   let write_file (path : string) (content : string) =
     try
