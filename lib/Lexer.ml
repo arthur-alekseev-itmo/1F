@@ -54,7 +54,7 @@ module Lexer = struct
     | '"', Star (Sub (any, '"')), '"' ->
         let s = Sedlexing.Utf8.lexeme buf in
         ok @@ StringLiteral (String.sub s 1 (String.length s - 2))
-    | '\'', (Sub (any, '"')), '\'' ->
+    | '\'', Sub (any, '"'), '\'' ->
         let s = Sedlexing.lexeme_char buf 1 in
         ok @@ CharLiteral s
     | "(" -> ok LPar

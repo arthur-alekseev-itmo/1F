@@ -61,23 +61,22 @@ module Builtins = struct
   let explode_string =
     let inner x =
       match x with
-      | VString x -> 
-        let content = Containers.Utf8_string.to_list x |> List.map (fun v -> VChar v) in
-        VList content
+      | VString x ->
+          let content =
+            Containers.Utf8_string.to_list x |> List.map (fun v -> VChar v)
+          in
+          VList content
       | _ -> failwith "Can only explode string"
     in
     VBuiltin inner
-  
+
   let implode_string =
-    let get_uchars = function
-      | VChar x -> x
-      | _ -> failwith "Expected char"
-    in
+    let get_uchars = function VChar x -> x | _ -> failwith "Expected char" in
     let inner x =
       match x with
-      | VList x -> 
-        let str = List.map get_uchars x |> CCUtf8_string.of_list in
-        VString str
+      | VList x ->
+          let str = List.map get_uchars x |> CCUtf8_string.of_list in
+          VString str
       | _ -> failwith "Can only explode string"
     in
     VBuiltin inner

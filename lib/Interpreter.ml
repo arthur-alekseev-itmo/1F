@@ -56,12 +56,18 @@ module Interpreter = struct
         let arg' = eval_expr arg ctx in
         eval_application callee' arg' ctx
     | Value name -> search_in_ctx name ctx
-    | LetIn (recursive, pat, expr, body) ->
-        (* TODO: REC *)
-        let ctx = if recursive then ctx else ctx in
-        let expr' = eval_expr expr ctx in
-        let ctx' = set_pattern_to_ctx pat expr' ctx in
-        eval_expr body ctx'
+    | LetIn (true, PatVariable name, expr, body) ->
+        let lazy_value = VLazy expr in
+        let ctx' = set_pattern_to_ctx (PatVariable name) lazy_value ctx in
+        let expr' = eval_expr expr ctx' in
+        let ctx'' = set_pattern_to_ctx (PatVariable name) expr' ctx' in
+        eval_expr body ctx''
+    | LetIn (isrec, pat, expr, body) ->
+        if isrec then failwith "This expr cannot be recursive"
+        else
+          let expr' = eval_expr expr ctx in
+          let ctx' = set_pattern_to_ctx pat expr' ctx in
+          eval_expr body ctx'
     | Lambda lam ->
         VClosure { f = lam; captured = ctx.locals } (* Сохранять ссылочку  *)
     | IfThenElse ite -> eval_ite ite ctx
@@ -112,8 +118,10 @@ module Interpreter = struct
     | VRecord r -> StringMap.find field r
     | _ -> failwith "Can only lookup value in the record"
 
+  and unlazy v ctx = match v with VLazy x -> eval_expr x ctx | e -> e
+
   and eval_application (callee : value) (arg : value) ctx =
-    match callee with
+    match unlazy callee ctx with
     | VBuiltin b -> b arg
     | VClosure closure ->
         let cap' = set_pattern_force closure.f.arg arg closure.captured in

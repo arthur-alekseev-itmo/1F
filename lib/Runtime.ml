@@ -16,6 +16,7 @@ module Runtime = struct
     | VRecord of value StringMap.t
     | VBuiltin of (value -> value)
     | VChar of Uchar.t
+    | VLazy of Ast.expr
 
   and variant_data = { tag : string; value : value }
   and closure_data = { f : Ast.lambda_body; captured : value StringMap.t }
@@ -52,4 +53,5 @@ module Runtime = struct
         Format.sprintf "{ %s }" fields
     | VBuiltin _ -> "<builtin>"
     | VChar c -> uchar_to_string c
+    | VLazy _ -> "<lazy>"
 end
