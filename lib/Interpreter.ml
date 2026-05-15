@@ -1,6 +1,7 @@
 open Ast
 open Runtime.Runtime
 open Builtins
+open ParserErrors
 
 module Interpreter = struct
   let ( >>= ) = Result.bind
@@ -10,7 +11,9 @@ module Interpreter = struct
 
   let rec search_in_ctx (name : string) ctx =
     match (StringMap.find_opt name ctx.locals, ctx.parent) with
-    | None, None -> failwith @@ "Value not found : " ^ name
+    | None, None ->
+      print_endline name;
+      failwith @@ "Value not found : " ^ name
     | Some x, _ -> x
     | None, Some p -> search_in_ctx name p
 
@@ -48,6 +51,11 @@ module Interpreter = struct
     let locals = set_pattern_force p e ctx.locals in
     { ctx with locals }
 
+  let has_module c ctx =
+    match StringMap.find_opt c ctx with
+    | Some(VModule _) -> true
+    | _ -> false
+
   let rec eval_expr (e : Ast.expr) ctx =
     match e with
     | Const lit -> eval_literal lit
@@ -74,6 +82,8 @@ module Interpreter = struct
     | TupleInit xs ->
         let xs' = List.map (fun e -> eval_expr e ctx) xs in
         VTuple xs'
+    | Ctor c when has_module c ctx.locals -> 
+         search_in_ctx c ctx
     | Ctor c -> VVariant { tag = c; value = VUnit }
     | FieldAccess (target, field) ->
         let target' = eval_expr target ctx in
@@ -84,7 +94,7 @@ module Interpreter = struct
     | RecordInit fields ->
         let kvs = List.map (fun (k, v) -> (k, eval_expr v ctx)) fields in
         kvs |> List.to_seq |> StringMap.of_seq |> fun m -> VRecord m
-    | RecordUpdate _ -> failwith "TODO"
+    | RecordUpdate _ -> failwith "TODO: Record update"
     | EmptyList -> VList []
 
   and eval_match (scrutinee : value) branches ctx =
@@ -116,7 +126,10 @@ module Interpreter = struct
   and eval_field_access (target : value) (field : string) _ =
     match target with
     | VRecord r -> StringMap.find field r
-    | _ -> failwith "Can only lookup value in the record"
+    | VModule m -> StringMap.find field m.values
+    | e -> 
+      let message = Format.sprintf "Can only lookup value in record or module. Got: %s" (value_to_string e) in
+      failwith message
 
   and unlazy v ctx = match v with VLazy x -> eval_expr x ctx | e -> e
 
@@ -130,27 +143,33 @@ module Interpreter = struct
     | VVariant v when v.value = VUnit -> VVariant { v with value = arg }
     | e -> failwith @@ "Cannot apply non-function: " ^ value_to_string e
 
-  let interpret_decl ctx (d : Ast.decl) =
-    let value' = eval_expr d.body ctx in
-    set_pattern_to_ctx d.name value' ctx
+  let rec interpret_decl ctx (d : Ast.decl) =
+    match d with
+    | LetDecl { recursive = true; name = PatVariable(name); body } ->
+        let lazy_value = VLazy body in
+        let ctx' = set_pattern_to_ctx (PatVariable name) lazy_value ctx in
+        let body' = eval_expr body ctx' in
+        set_pattern_to_ctx (Ast.PatVariable name) body' ctx'
+    | LetDecl d ->
+        let value' = eval_expr d.body ctx in
+        set_pattern_to_ctx d.name value' ctx
+    | ModuleDecl m ->
+        let module_ctx = { parent = Some ctx; locals = StringMap.empty } in
+        let module_ctx = m.decls |> List.fold_left interpret_decl module_ctx in
+        let value = VModule { name = m.name; values = module_ctx.locals } in
+        set_pattern_to_ctx (Ast.PatVariable m.name) value ctx
 
   let interpret (p : Ast.program) =
     List.fold_left interpret_decl initial_stack p
 
   let eval_string s =
     let run = function
-      | Parser.Parser.Parsed (r, []) ->
+      | Parser.Parser.Parsed (r, _) ->
           eval_expr r initial_stack |> value_to_string |> print_endline
-      | Parser.Parser.Failed f -> failwith f
-      | Parser.Parser.Parsed (_, t) ->
-          let message =
-            List.map Lexemes.Lexemes.to_string t |> String.concat "; "
-          in
-          failwith message
-      | _ -> failwith "TODO"
+      | Parser.Parser.Failed (msg, range) -> ParserErrors.print s msg range
+      | Parser.Parser.HardFailed (msg, range) -> ParserErrors.print s msg range
     in
     Lexer.Lexer.lex_string s
-    |> Result.map (fun r -> List.map (fun (x, _, _) -> x) r)
     |> Result.map (fun x -> Parser.Parser.parse_expr x)
     |> Result.iter run
 end

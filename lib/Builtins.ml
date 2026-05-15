@@ -23,6 +23,14 @@ module Builtins = struct
     in
     VBuiltin inner
 
+  let read =
+    let inner = function
+      | VUnit ->
+          read_line () |> CCUtf8_string.of_string_exn |> fun x -> VString x
+      | _ -> failwith "This function expects unit as an argument"
+    in
+    VBuiltin inner
+
   let debug =
     let inner x =
       print_endline @@ Runtime.Runtime.value_to_string x;
@@ -47,6 +55,14 @@ module Builtins = struct
       match (a, b) with
       | VString a, VString b -> VString (CCUtf8_string.append a b)
       | _ -> failwith "String concatenation is for strings only"
+    in
+    binop_base inner
+
+  let list_concat =
+    let inner a b =
+      match (a, b) with
+      | VList a, VList b -> VList (a @ b)
+      | _ -> failwith "Expected list for concat"
     in
     binop_base inner
 
@@ -119,6 +135,7 @@ module Builtins = struct
       ("-", int_binop_base ( - ));
       ("*", int_binop_base ( * ));
       ("/", int_binop_base ( / ));
+      ("%", int_binop_base ( mod ));
       ("^", string_append);
       ("<", polycompare_base (( = ) (-1)));
       (">", polycompare_base (( = ) 1));
@@ -127,7 +144,9 @@ module Builtins = struct
       (">=", polycompare_base (( <> ) (-1)));
       ("<=", polycompare_base (( <> ) 1));
       ("::", list_const);
+      ("@", list_concat);
       ("напечатай", print);
+      ("считай", read);
       ("дебаг", debug);
       ("список_из_строки", explode_string);
       ("строка_из_списка", implode_string);

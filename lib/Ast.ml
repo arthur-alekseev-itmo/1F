@@ -40,7 +40,9 @@ module Ast = struct
     result : expr;
   }
 
-  and decl = { name : pattern; recursive : bool; body : expr }
+  and decl = 
+    | LetDecl of { name : pattern; recursive : bool; body : expr }
+    | ModuleDecl of { name: string; decls: decl list }
 
   type program = decl list
 end

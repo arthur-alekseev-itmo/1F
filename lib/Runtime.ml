@@ -4,6 +4,7 @@ module Runtime = struct
   module StringMap = Map.Make (String)
 
   type value =
+    | VModule of module_data
     | VClosure of closure_data
     | VString of CCUtf8_string.t
     | VInt of int
@@ -20,6 +21,7 @@ module Runtime = struct
 
   and variant_data = { tag : string; value : value }
   and closure_data = { f : Ast.lambda_body; captured : value StringMap.t }
+  and module_data = { name: string; values : value StringMap.t }
 
   type stackframe = { parent : stackframe option; locals : value StringMap.t }
 
@@ -54,4 +56,5 @@ module Runtime = struct
     | VBuiltin _ -> "<builtin>"
     | VChar c -> uchar_to_string c
     | VLazy _ -> "<lazy>"
+    | VModule m -> Format.sprintf "<module %s>" m.name
 end

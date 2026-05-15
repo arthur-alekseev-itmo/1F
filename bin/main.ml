@@ -1,4 +1,6 @@
 open OneF.Interpreter
+open OneF.Parser
+open OneF.ParserErrors
 
 let input_file = ref "вход.1ф"
 let output_file = ref None
@@ -35,8 +37,11 @@ let main () =
   let ( let* ) = Result.bind in
   Arg.parse speclist ignore usage_msg;
   let* input = read_string () in
-  Interpreter.eval_string input;
-  Ok ()
+  let* parse_result = Parser.program_of_string input in
+  match parse_result with
+  | Parser.Parsed (r, _) -> Interpreter.interpret r |> ignore |> Result.ok
+  | Parser.Failed (msg, range) -> Result.ok @@ ParserErrors.print input msg range
+  | Parser.HardFailed (msg, range) -> Result.ok @@ ParserErrors.print input msg range
 
 let () =
   match main () with

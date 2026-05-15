@@ -18,5 +18,13 @@
  (instrumentation
   (backend bisect_ppx)))
 
+(executable
+ (name test_eval)
+ (modules test_eval)
+ (public_name test_eval)
+ (libraries OneF)
+ (instrumentation
+  (backend bisect_ppx)))
+
 (cram
- (deps "./test_lexer.exe" "./test_interpreter.exe"))
+ (deps "./test_lexer.exe" "./test_interpreter.exe" "./test_eval.exe"))
