@@ -331,10 +331,11 @@ module Parser = struct
 
   and parse_lambda input =
     let inner =
-      let* _skip = token Lambda in
-      let parse_args = must (some parse_pattern) "Awaited at least one pattern" in
+      let* (_, lps, lpe) = token Lambda in
+      let parse_args = must_pos (lps, lpe) (some parse_pattern) "Awaited at least one pattern" in
       let* args = parse_args in
-      let* body = must_token Arrow *> parse_expr in
+      let* (_, aps, ape) = must_token Arrow in
+      let* body = must_pos (aps, ape) parse_expr "Awaited expr in lambda body" in
       return @@ List.fold_left (fun body arg -> Lambda { body; arg }) body args
     in
     inner input
@@ -387,10 +388,10 @@ module Parser = struct
 
   and parse_let_decl input =
     let inner =
-      let* _ = token Let in
+      let* (_, lps, lpe) = token Let in
       let* rec_f = wrap (token Rec) in
       let recursive = Option.is_some rec_f in
-      let* name = must parse_pattern "Let binding must have a name" in
+      let* name = must_pos (lps, lpe) parse_pattern "Let binding must have a name" in
       let* args = many parse_pattern in
       let* (_, ps, pe) = must_token (Operator "=") in
       let* body = must_pos (ps, pe) parse_expr "Awaited expr after eq" in

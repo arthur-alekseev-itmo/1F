@@ -17,7 +17,7 @@ module ParserErrors = struct
   let fmt (file: string) (message: string) (position: range) =
     let eof_pos = {
       pos_fname = "??";
-      pos_lnum = String.split_on_char '\n' file |> List.length;
+      pos_lnum = String.split_on_char '\n' file |> List.length |> ((+) (-1));
       pos_bol = 0;
       pos_cnum = CCUtf8_string.of_string_exn file |> CCUtf8_string.n_chars
     } in
