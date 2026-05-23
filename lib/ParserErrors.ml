@@ -14,7 +14,7 @@ module ParserErrors = struct
 
   let fmt_json _ message (range : Parser.pos * Parser.pos) =
     let range_json = fmt_json_range range in
-    Format.sprintf "{\"message\": %s, \"range\": %s, \"severity\": 1}" message range_json
+    Format.sprintf "{\"message\": \"%s\", \"range\": %s, \"severity\": 1}" message range_json
 
   let fmt_pos file message (position : Parser.pos * Parser.pos) =
     let p_start, p_end = position in

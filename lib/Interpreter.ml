@@ -177,17 +177,20 @@ module Interpreter = struct
     | VVariant v when v.value = VUnit -> VVariant { v with value = arg }
     | e -> failwith @@ "Cannot apply non-function: " ^ value_to_string e
 
-  let interpret_let ctx d =
-    
-
   let rec interpret_decl ctx (d : Ast.decl) =
     match d with
-    | LetDeclGroup { recursive = true; name = PatVariable name; body; typ = _ } ->
-        let lazy_value = VLazy body in
-        let ctx' = set_pattern_to_ctx (PatVariable name) lazy_value ctx in
-        let body' = eval_expr body ctx' in
-        set_pattern_to_ctx (Ast.PatVariable name) body' ctx'
-    | LetDeclGroup d ->
+    | LetDeclRecursiveGroup decls ->
+        let add_decl_to_ctx ctx (d: Ast.let_decl) =
+          let lazy_value = VLazy d.body in
+          set_pattern_to_ctx d.name lazy_value ctx
+        in
+        let eval_decl ctx (d: Ast.let_decl) =
+          let body' = eval_expr d.body ctx in
+          set_pattern_to_ctx d.name body' ctx
+        in
+        let ctx' = List.fold_left add_decl_to_ctx ctx decls in
+        List.fold_left eval_decl ctx' decls
+    | LetDecl d ->
         let value' = eval_expr d.body ctx in
         set_pattern_to_ctx d.name value' ctx
     | ModuleDecl m ->

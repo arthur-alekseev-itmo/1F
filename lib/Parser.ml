@@ -26,7 +26,7 @@ module Parser = struct
   let parse_token cond = function
     | (h, ps, pe) :: t when cond h -> return (h, ps, pe) t
     | (h, ps, pe) :: t ->
-        fail (Format.asprintf "Token \"%s\" not resolved" (to_string h)) ps pe t
+        fail (Format.asprintf "Token '%s' not resolved" (to_string h)) ps pe t
     | _ -> just_fail "unexpected EOF" []
 
   let token t = parse_token (( = ) t)
@@ -100,11 +100,11 @@ module Parser = struct
     | Some (tok, ps, pe) ->
         let s_tok = to_string tok in
         let s_t = to_string t in
-        let msg = Format.sprintf "Awaited: \"%s\", but got: \"%s\"" s_t s_tok in
+        let msg = Format.sprintf "Awaited: '%s', but got: '%s'" s_t s_tok in
         hardfail msg ps pe
     | None ->
         let msg =
-          Format.sprintf "Unexpected EOF, but awaited: \"%s\"" (to_string t)
+          Format.sprintf "Unexpected EOF, but awaited: '%s'" (to_string t)
         in
         fun _ -> HardFailed (msg, Eof)
 
@@ -118,7 +118,7 @@ module Parser = struct
         let s_t = to_string t_end in
         let s_x = to_string x in
         let msg =
-          Format.sprintf "Unmatched brackets: got \"%s\" instead of \"%s\"" s_x
+          Format.sprintf "Unmatched brackets: got '%s' instead of '%s'" s_x
             s_t
         in
         hardfail msg ps pe
@@ -387,9 +387,9 @@ let parse_literal =
       let* args = many parse_typed_pattern in
       let* _maybe_ty = wrap @@ (token Colon *> parse_ty) in
       let eq = must_token (Operator "=") in
-      let* value = must (eq *> parse_expr) "Awaited expr after \"пусть\"" in
+      let* value = must (eq *> parse_expr) "Awaited expr after 'пусть'" in
       let* _, ips, ipe = token In in
-      let* body = must_pos (ips, ipe) parse_expr "Awaited expr after \"в\"" in
+      let* body = must_pos (ips, ipe) parse_expr "Awaited expr after 'в'" in
       let fun_expr =
         List.fold_left
           (fun body arg -> Lambda { arg; body })
@@ -403,15 +403,15 @@ let parse_literal =
     let inner =
       let* _, ips, ipe = token If in
       let* cond =
-        must_pos (ips, ipe) parse_expr "Awaited expr after \"если\""
+        must_pos (ips, ipe) parse_expr "Awaited expr after 'если'"
       in
       let* _, tps, tpe = must_token Then in
       let* thenBranch =
-        must_pos (tps, tpe) parse_expr "Awaited expr after \"то\""
+        must_pos (tps, tpe) parse_expr "Awaited expr after 'то'"
       in
       let* _, eps, epe = must_token Else in
       let* elseBranch =
-        must_pos (eps, epe) parse_expr "Awaited expr after \"иначе\""
+        must_pos (eps, epe) parse_expr "Awaited expr after 'иначе'"
       in
       return @@ IfThenElse { cond; thenBranch; elseBranch }
     in
@@ -489,14 +489,34 @@ let parse_literal =
     inner input
 
   and parse_let_decl input =
-    let* parse_binding_after_let =
+    let parse_binding_after_let (lps, lpe) : let_decl parser =
       let* name = must_pos (lps, lpe) parse_pattern "Let binding must have a name" in
-      let* args = many parse_pattern in
+      let* args = many parse_typed_pattern in
       let* (_, ps, pe) = must_token (Operator "=") in
       let* typ = must_token Colon *> parse_ty in
-      let* ()
+      let* raw_body = must_pos (ps, pe) parse_expr "Awaited expr after eq" in
+      let body =
+        List.fold_left
+          (fun body arg -> Lambda { arg; body })
+          raw_body (List.rev args)
+      in
+      let arg_typs = List.map snd args in
+      let typ = List.fold_left (fun b a -> TypArrow(a, b)) typ arg_typs in
+      return { name; body; typ }
     in
     let inner =
+      let* (_, lps, lpe) = token Let in
+      let* rec_f = wrap (token Rec) in
+      let recursive = Option.is_some rec_f in
+      match recursive with
+      | true -> 
+        let* main_block = parse_binding_after_let (lps, lpe) in
+        let and_blocks = token And >>= (fun (_, lps, lpe) -> parse_binding_after_let (lps, lpe)) in
+        let* other = many and_blocks in
+        return @@ LetDeclRecursiveGroup (main_block :: other)
+      | false ->
+       let* main_block = parse_binding_after_let (lps, lpe) in 
+       return @@ LetDecl main_block
     in
   inner input
     
