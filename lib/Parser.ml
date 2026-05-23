@@ -492,15 +492,15 @@ let parse_literal =
     let parse_binding_after_let (lps, lpe) : let_decl parser =
       let* name = must_pos (lps, lpe) parse_pattern "Let binding must have a name" in
       let* args = many parse_typed_pattern in
-      let* (_, ps, pe) = must_token (Operator "=") in
       let* typ = must_token Colon *> parse_ty in
+      let* (_, ps, pe) = must_token (Operator "=") in
       let* raw_body = must_pos (ps, pe) parse_expr "Awaited expr after eq" in
       let body =
         List.fold_left
           (fun body arg -> Lambda { arg; body })
           raw_body (List.rev args)
       in
-      let arg_typs = List.map snd args in
+      let arg_typs = List.map snd args |> List.rev in
       let typ = List.fold_left (fun b a -> TypArrow(a, b)) typ arg_typs in
       return { name; body; typ }
     in
@@ -519,7 +519,6 @@ let parse_literal =
        return @@ LetDecl main_block
     in
   inner input
-    
       
   let parse_program = 
     many parse_decl
