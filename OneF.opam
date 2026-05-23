@@ -14,6 +14,7 @@ bug-reports: "https://gitlab.com/arthur.alekseev.itmo/mse-fl/-/issues"
 depends: [
   "ocaml"
   "uucp"
+  "containers"
   "dune" {>= "3.20"}
   "ppx_deriving"
   "sedlex"

@@ -1,4 +1,5 @@
 open OneF.Lexer.Lexer
+open OneF.Lexemes.Lexemes
 
 let fail_test name message = failwith (Format.sprintf "%s: %s" name message)
 let eq = Operator "="
@@ -14,7 +15,7 @@ let rec collect gen =
 
 let lex input = collect (token_gen_of_string input)
 let tokens_only triples = List.map (fun (token, _, _) -> token) triples
-let show_token = show
+let show_token = to_string
 
 let show_tokens tokens =
   tokens |> List.map show_token |> String.concat "; " |> Format.sprintf "[%s]"

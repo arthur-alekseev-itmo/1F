@@ -22,6 +22,7 @@
  (depends
   ocaml
   uucp
+  containers
   dune
   ppx_deriving
   sedlex)
