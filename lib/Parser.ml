@@ -3,19 +3,15 @@ open Ast.Ast
 
 module Parser = struct
   type pos = Lexing.position
-  type range = 
-    | Known of pos * pos
-    | Unknown
-    | Eof
-
+  type range = Known of pos * pos | Unknown | Eof
   type token = t * pos * pos
   type input = token list
 
   (* Parsing results *)
   type 'a parse_result =
-    | Failed of string * range 
+    | Failed of string * range
     | Parsed of 'a * input
-    | HardFailed of string * range 
+    | HardFailed of string * range
 
   type 'a parser = input -> 'a parse_result
 
@@ -61,11 +57,12 @@ module Parser = struct
     | Failed (_, range) -> HardFailed (msg, range)
     | other -> other
 
-  let must_pos ((ps, pe): pos * pos) (p: 'a parser) (msg: string) : 'a parser =
-    fun input ->
-      match p input with
-      | Failed (_, _) -> HardFailed (msg, Known (ps, pe))
-      | other -> other
+  let must_pos ((ps, pe) : pos * pos) (p : 'a parser) (msg : string) : 'a parser
+      =
+   fun input ->
+    match p input with
+    | Failed (_, _) -> HardFailed (msg, Known (ps, pe))
+    | other -> other
 
   (* if the parser fails will return None, else ruturs Some 'a *)
   let wrap p i =
@@ -90,8 +87,8 @@ module Parser = struct
     let* first = wrap @@ inner_parser in
     match first with
     | Some first ->
-      let* other = many @@ sep_parser *> inner_parser in
-      return @@ first :: other  
+        let* other = many @@ (sep_parser *> inner_parser) in
+        return @@ (first :: other)
     | None -> return []
 
   let rec fix f x = f (fix f) x
@@ -105,8 +102,10 @@ module Parser = struct
         let s_t = to_string t in
         let msg = Format.sprintf "Awaited: \"%s\", but got: \"%s\"" s_t s_tok in
         hardfail msg ps pe
-    | None -> 
-        let msg = Format.sprintf "Unexpected EOF, but awaited: \"%s\"" (to_string t) in
+    | None ->
+        let msg =
+          Format.sprintf "Unexpected EOF, but awaited: \"%s\"" (to_string t)
+        in
         fun _ -> HardFailed (msg, Eof)
 
   let between t_start t_end content =
@@ -116,10 +115,13 @@ module Parser = struct
     match tok_end with
     | Some (t, _, _) when t = t_end -> return content
     | Some (x, _, pe) ->
-      let s_t = to_string t_end in
-      let s_x = to_string x in
-      let msg = Format.sprintf "Unmatched brackets: got \"%s\" instead of \"%s\"" s_x s_t in
-      hardfail msg ps pe
+        let s_t = to_string t_end in
+        let s_x = to_string x in
+        let msg =
+          Format.sprintf "Unmatched brackets: got \"%s\" instead of \"%s\"" s_x
+            s_t
+        in
+        hardfail msg ps pe
     | None -> hardfail "Bracket is unmached: EOF" ps pse
 
   (************ Domain ************)
@@ -171,27 +173,97 @@ module Parser = struct
     let* name = parse_big_id in
     return @@ Ctor name
 
-  let parse_numeric =
-    let* t, ps, pe = parse_token (fun _ -> true) in
+let parse_literal =
+  let* t, ps, pe = parse_token (fun _ -> true) in
     match t with
-    | IntLiteral x -> return @@ Const (IntLiteral x)
-    | FloatLiteral x -> return @@ Const (FloatLiteral x)
-    | StringLiteral x -> return @@ Const (StringLiteral x)
-    | BoolLiteral x -> return @@ Const (BoolLiteral x)
-    | CharLiteral x -> return @@ Const (CharLiteral x)
+    | IntLiteral x -> return (IntLiteral x)
+    | FloatLiteral x -> return (FloatLiteral x)
+    | StringLiteral x -> return (StringLiteral x)
+    | BoolLiteral x -> return (BoolLiteral x)
+    | CharLiteral x -> return (CharLiteral x)
     | _ -> fail "Not a literal" ps pe
 
+  let parse_numeric =
+    let* lit = parse_literal in
+    return @@ Const lit
+
   let parse_operator_literal =
-    let* token, ps, pe = token LPar *> parse_token (fun _ -> true) <* token RPar in
+    let* token, ps, pe =
+      token LPar *> parse_token (fun _ -> true) <* token RPar
+    in
     match token with
     | Operator x -> return x
     | _ -> fail "Not an operator" ps pe
+
+  let parse_ground =
+    let* t = parse_id in
+    let ret x = TypGround x |> return in
+    match t with
+    | "инт" -> ret TypInt
+    | "бул" -> ret TypBool
+    | "скиб" -> ret TypUnit
+    | "строка" -> ret TypString
+    | "дроб" -> ret TypFloat
+    | other -> return (TypVar other)
+
+  let rec parse_ty input =
+    let inner =
+      let* atoms =
+        sep_by ~inner_parser:parse_ty_atom ~sep_parser:(token Arrow)
+      in
+      match List.rev atoms with
+      | [] -> just_fail "No type atoms parsed"
+      | h :: t -> return @@ List.fold_left (fun acc b -> TypArrow (b, acc)) h t
+    in
+    inner input
+
+  and parse_ty_ctor input =
+    let inner =
+      let* name = parse_big_id in
+      let parse_args =
+        let comma = token Comma in
+        let p = sep_by ~inner_parser:parse_ty ~sep_parser:comma in
+        between (Operator "<") (Operator ">") p
+      in
+      let* raw_args = wrap parse_args in
+      let args = Option.value ~default:[] raw_args in
+      return @@ TypCtor (name, args)
+    in
+    inner input
+
+  and parse_ty_tuple input =
+    let inner =
+      let content =
+        let comma = token Comma in
+        sep_by ~sep_parser:comma ~inner_parser:parse_ty
+      in
+      let* res = between LPar RPar content in
+      match res with
+      | [] -> return @@ TypGround TypUnit
+      | [ x ] -> return x
+      | lst -> return @@ TypTuple lst
+    in
+    inner input
+
+  and parse_ty_atom input =
+    (parse_ground <|> parse_ty_ctor <|> parse_ty_tuple) input
 
   let rec parse_pattern input =
     let inner =
       let* atom = parse_pattern_atom in
       let* conss = many @@ (token (Operator "::") *> parse_pattern_atom) in
       return @@ List.fold_left (fun acc x -> PatListCons (acc, x)) atom conss
+    in
+    inner input
+
+  and parse_typed_pattern input =
+    let inner =
+      let content =
+        let* pat = parse_pattern in
+        let* ty = must_token Colon *> parse_ty in
+        return (pat, ty)
+      in
+      between LPar RPar content
     in
     inner input
 
@@ -209,6 +281,7 @@ module Parser = struct
       return @@ PatCtor (ctor_name, pat)
     in
     let pat_empty_list = token LBr *> return PatEmptyList <* token RBr in
+    let pat_literal = parse_literal >>= fun n -> return @@ PatLiteral n in
     let just_id = parse_id >>= fun id -> return @@ PatVariable id in
     let others =
       let* in_parens =
@@ -219,7 +292,7 @@ module Parser = struct
       | [ x ] -> return x
       | xs -> return @@ PatTuple xs
     in
-    (pat_empty_list <|> pat_wild <|> just_id <|> operator_id <|> ctor_pattern
+    (pat_literal <|> pat_empty_list <|> pat_wild <|> just_id <|> operator_id <|> ctor_pattern
    <|> others)
       input
 
@@ -248,16 +321,32 @@ module Parser = struct
 
   and parse_atom_or_access input = parse_field_access input
 
-  and parse_record_init input =
-    let field_assignment =
+  and field_assignment input =
+    let inner =
       let* field = parse_id in
       let* value = token (Operator "=") *> parse_expr in
       return (field, value)
     in
+    inner input
+
+  and parse_record_update input =
+    let inner =
+      let semi = token Semicolon in
+      let content =
+        let* target = parse_expr <* token With in
+        let* updates = sep_by ~inner_parser:field_assignment ~sep_parser:semi in
+        return (target, updates)
+      in
+      let* target, updates = token LCbr *> content <* must_token RCbr in
+      return @@ RecordUpdate (target, updates)
+    in
+    inner input
+
+  and parse_record_init input =
     let inner =
       let semi = token Semicolon in
       let content = sep_by ~inner_parser:field_assignment ~sep_parser:semi in
-      let* result = token LCbr *> content <* token RCbr in
+      let* result = between LCbr RCbr content in
       return @@ RecordInit result
     in
     inner input
@@ -286,18 +375,20 @@ module Parser = struct
   and parse_atom input =
     (parse_list_construction <|> parse_lambda <|> parse_match <|> parse_ctor
    <|> parse_ite <|> parse_operator_value <|> parse_tuple <|> parse_value
-   <|> parse_numeric <|> parse_let <|> parse_record_init)
+   <|> parse_numeric <|> parse_let <|> parse_record_update <|> parse_record_init
+    )
       input
 
   and parse_let input =
     let inner =
-      let* (_, lps, lpe) = token Let in
+      let* _, lps, lpe = token Let in
       let* recursive = wrap (token Rec) in
       let* pat = must_pos (lps, lpe) parse_pattern "Awaited pattern" in
-      let* args = many parse_pattern in
+      let* args = many parse_typed_pattern in
+      let* _maybe_ty = wrap @@ (token Colon *> parse_ty) in
       let eq = must_token (Operator "=") in
       let* value = must (eq *> parse_expr) "Awaited expr after \"пусть\"" in
-      let* (_, ips, ipe) = token In in
+      let* _, ips, ipe = token In in
       let* body = must_pos (ips, ipe) parse_expr "Awaited expr after \"в\"" in
       let fun_expr =
         List.fold_left
@@ -310,12 +401,18 @@ module Parser = struct
 
   and parse_ite input =
     let inner =
-      let* (_, ips, ipe) = token If in
-      let* cond = must_pos (ips, ipe) parse_expr "Awaited expr after \"если\"" in
-      let* (_, tps, tpe) = must_token Then in
-      let* thenBranch = must_pos (tps, tpe) parse_expr "Awaited expr after \"то\"" in
-      let* (_, eps, epe) = must_token Else in
-      let* elseBranch = must_pos (eps, epe) parse_expr "Awaited expr after \"иначе\"" in
+      let* _, ips, ipe = token If in
+      let* cond =
+        must_pos (ips, ipe) parse_expr "Awaited expr after \"если\""
+      in
+      let* _, tps, tpe = must_token Then in
+      let* thenBranch =
+        must_pos (tps, tpe) parse_expr "Awaited expr after \"то\""
+      in
+      let* _, eps, epe = must_token Else in
+      let* elseBranch =
+        must_pos (eps, epe) parse_expr "Awaited expr after \"иначе\""
+      in
       return @@ IfThenElse { cond; thenBranch; elseBranch }
     in
     inner input
@@ -331,11 +428,16 @@ module Parser = struct
 
   and parse_lambda input =
     let inner =
-      let* (_, lps, lpe) = token Lambda in
-      let parse_args = must_pos (lps, lpe) (some parse_pattern) "Awaited at least one pattern" in
+      let* _, lps, lpe = token Lambda in
+      let parse_args =
+        must_pos (lps, lpe) (some parse_typed_pattern)
+          "Awaited at least one pattern"
+      in
       let* args = parse_args in
-      let* (_, aps, ape) = must_token Arrow in
-      let* body = must_pos (aps, ape) parse_expr "Awaited expr in lambda body" in
+      let* _, aps, ape = must_token Arrow in
+      let* body =
+        must_pos (aps, ape) parse_expr "Awaited expr in lambda body"
+      in
       return @@ List.fold_left (fun body arg -> Lambda { body; arg }) body args
     in
     inner input
@@ -372,8 +474,7 @@ module Parser = struct
     let parser = List.fold_left chainl1 l1_expr operators in
     parser input
 
-  let rec parse_decl input =
-    (parse_module <|> parse_let_decl) input
+  let rec parse_decl input = (parse_module <|> parse_let_decl) input
 
   and parse_module input =
     let inner =
@@ -384,24 +485,21 @@ module Parser = struct
       let* decls = many parse_decl in
       let* _ = must_token End in
       return @@ ModuleDecl { name; decls }
-    in inner input
+    in
+    inner input
 
   and parse_let_decl input =
-    let inner =
-      let* (_, lps, lpe) = token Let in
-      let* rec_f = wrap (token Rec) in
-      let recursive = Option.is_some rec_f in
+    let* parse_binding_after_let =
       let* name = must_pos (lps, lpe) parse_pattern "Let binding must have a name" in
       let* args = many parse_pattern in
       let* (_, ps, pe) = must_token (Operator "=") in
-      let* body = must_pos (ps, pe) parse_expr "Awaited expr after eq" in
-      let fun_expr =
-        List.fold_left
-          (fun body arg -> Lambda { arg; body })
-          body (List.rev args)
-      in
-      return @@ LetDecl { name; recursive; body = fun_expr }
-    in inner input
+      let* typ = must_token Colon *> parse_ty in
+      let* ()
+    in
+    let inner =
+    in
+  inner input
+    
       
   let parse_program = 
     many parse_decl

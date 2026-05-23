@@ -12,8 +12,8 @@ module Interpreter = struct
   let rec search_in_ctx (name : string) ctx =
     match (StringMap.find_opt name ctx.locals, ctx.parent) with
     | None, None ->
-      print_endline name;
-      failwith @@ "Value not found : " ^ name
+        print_endline name;
+        failwith @@ "Value not found : " ^ name
     | Some x, _ -> x
     | None, Some p -> search_in_ctx name p
 
@@ -42,7 +42,8 @@ module Interpreter = struct
         List.fold_left folder (Ok vars) zipped
     | PatCtor (pname, ppat), VVariant v when pname = v.tag ->
         set_pattern ppat v.value vars
-    | _ -> Error "Bad pattern match"
+    | PatLiteral x, y when eval_literal x = y -> Ok vars
+    | _ -> Error ("Bad pattern match for " ^ (value_to_string e))
 
   let set_pattern_force p e v =
     match set_pattern p e v with Ok ok -> ok | Error err -> failwith err
@@ -51,10 +52,11 @@ module Interpreter = struct
     let locals = set_pattern_force p e ctx.locals in
     { ctx with locals }
 
-  let has_module c ctx =
-    match StringMap.find_opt c ctx with
-    | Some(VModule _) -> true
-    | _ -> false
+  let rec has_module name ctx =
+    match (StringMap.find_opt name ctx.locals, ctx.parent) with
+    | Some (VModule _), _ -> true
+    | _, None -> false
+    | _, Some p -> has_module name p
 
   let rec eval_expr (e : Ast.expr) ctx =
     match e with
@@ -82,8 +84,7 @@ module Interpreter = struct
     | TupleInit xs ->
         let xs' = List.map (fun e -> eval_expr e ctx) xs in
         VTuple xs'
-    | Ctor c when has_module c ctx.locals -> 
-         search_in_ctx c ctx
+    | Ctor c when has_module c ctx -> search_in_ctx c ctx
     | Ctor c -> VVariant { tag = c; value = VUnit }
     | FieldAccess (target, field) ->
         let target' = eval_expr target ctx in
@@ -94,8 +95,26 @@ module Interpreter = struct
     | RecordInit fields ->
         let kvs = List.map (fun (k, v) -> (k, eval_expr v ctx)) fields in
         kvs |> List.to_seq |> StringMap.of_seq |> fun m -> VRecord m
-    | RecordUpdate _ -> failwith "TODO: Record update"
+    | RecordUpdate (v, updates) ->
+        let v' = eval_expr v ctx in
+        let updates' =
+          List.map (fun (name, e) -> (name, eval_expr e ctx)) updates
+        in
+        update_record v' updates' ctx
     | EmptyList -> VList []
+
+  and update_record (v : value) (updates : (string * value) list) _ctx =
+    match v with
+    | VRecord r ->
+        let r' =
+          List.fold_left (fun m (k, v) -> StringMap.add k v m) r updates
+        in
+        VRecord r'
+    | e ->
+        let msg =
+          Format.sprintf "Cannot update non-record: %s" (value_to_string e)
+        in
+        failwith msg
 
   and eval_match (scrutinee : value) branches ctx =
     let try_branch (branch : Ast.match_pattern_branch) =
@@ -110,7 +129,10 @@ module Interpreter = struct
       | Error e -> Error e
     in
     match branches with
-    | [] -> failwith "Non exhaustive match"
+    | [] ->
+        let msg = value_to_string scrutinee in
+        print_endline msg;
+        failwith "Non exhaustive match"
     | h :: t -> (
         match try_branch h with
         | Ok v -> v
@@ -124,12 +146,24 @@ module Interpreter = struct
     | _ -> failwith "Awaited bool"
 
   and eval_field_access (target : value) (field : string) _ =
+    let find x m =
+      match StringMap.find_opt x m with
+      | Some x -> x
+      | None ->
+          let msg = Format.sprintf "Key %s was not found" x in
+          print_endline msg;
+          failwith msg
+    in
     match target with
-    | VRecord r -> StringMap.find field r
-    | VModule m -> StringMap.find field m.values
-    | e -> 
-      let message = Format.sprintf "Can only lookup value in record or module. Got: %s" (value_to_string e) in
-      failwith message
+    | VRecord r -> find field r
+    | VModule m -> find field m.values
+    | e ->
+        print_endline (value_to_string e);
+        let message =
+          Format.sprintf "Can only lookup value in record or module. Got: %s"
+            (value_to_string e)
+        in
+        failwith message
 
   and unlazy v ctx = match v with VLazy x -> eval_expr x ctx | e -> e
 
@@ -137,20 +171,23 @@ module Interpreter = struct
     match unlazy callee ctx with
     | VBuiltin b -> b arg
     | VClosure closure ->
-        let cap' = set_pattern_force closure.f.arg arg closure.captured in
+        let cap' = set_pattern_force (fst closure.f.arg) arg closure.captured in
         let ctx' = { parent = Some ctx; locals = cap' } in
         eval_expr closure.f.body ctx'
     | VVariant v when v.value = VUnit -> VVariant { v with value = arg }
     | e -> failwith @@ "Cannot apply non-function: " ^ value_to_string e
 
+  let interpret_let ctx d =
+    
+
   let rec interpret_decl ctx (d : Ast.decl) =
     match d with
-    | LetDecl { recursive = true; name = PatVariable(name); body } ->
+    | LetDeclGroup { recursive = true; name = PatVariable name; body; typ = _ } ->
         let lazy_value = VLazy body in
         let ctx' = set_pattern_to_ctx (PatVariable name) lazy_value ctx in
         let body' = eval_expr body ctx' in
         set_pattern_to_ctx (Ast.PatVariable name) body' ctx'
-    | LetDecl d ->
+    | LetDeclGroup d ->
         let value' = eval_expr d.body ctx in
         set_pattern_to_ctx d.name value' ctx
     | ModuleDecl m ->

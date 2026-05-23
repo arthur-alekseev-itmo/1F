@@ -1,6 +1,8 @@
 open OneF.Interpreter
 open OneF.Parser
 open OneF.ParserErrors
+open OneF.LocalTypec
+open OneF.Lexemes
 
 let input_file = ref "вход.1ф"
 let output_file = ref None
@@ -30,7 +32,7 @@ let read_file path =
 
 let read_string () =
   match !use_stdin with
-  | true -> Ok (In_channel.input_all In_channel.stdin)
+  | true -> Ok (read_line ())
   | false -> read_file !input_file
 
 let main () =
@@ -39,9 +41,20 @@ let main () =
   let* input = read_string () in
   let* parse_result = Parser.program_of_string input in
   match parse_result with
-  | Parser.Parsed (r, _) -> Interpreter.interpret r |> ignore |> Result.ok
-  | Parser.Failed (msg, range) -> Result.ok @@ ParserErrors.print input msg range
-  | Parser.HardFailed (msg, range) -> Result.ok @@ ParserErrors.print input msg range
+  | Parser.Parsed (_, h :: t) ->
+      let unparsed = h :: t in
+      Lexemes.dump unparsed |> Format.printf "Unparsed part: %s";
+      Result.ok ()
+  | Parser.Parsed (r, _) ->
+      let* typec = LocalTypec.infer r |> Result.map LocalTypec.env_to_list in
+      List.iter
+        (fun (k, v) -> Format.printf "%s: %s\n" k (Typec.pp_typ v))
+        typec;
+      Interpreter.interpret r |> ignore |> Result.ok
+  | Parser.Failed (msg, range) ->
+      Result.ok @@ ParserErrors.print input msg range
+  | Parser.HardFailed (msg, range) ->
+      Result.ok @@ ParserErrors.print input msg range
 
 let () =
   match main () with

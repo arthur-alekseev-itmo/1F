@@ -1,13 +1,4 @@
 module Ast = struct
-  type pattern =
-    | PatUnit
-    | PatVariable of string
-    | PatTuple of pattern list
-    | PatCtor of string * pattern
-    | PatWildcard
-    | PatListCons of pattern * pattern
-    | PatEmptyList
-
   type literal =
     | IntLiteral of int
     | FloatLiteral of float
@@ -16,8 +7,36 @@ module Ast = struct
     | CharLiteral of Uchar.t
     | UnitLiteral
 
+  type typ_ground =
+    | TypUnit
+    | TypChar
+    | TypString
+    | TypInt
+    | TypBool
+    | TypFloat
+
+  type typ =
+    | TypGround of typ_ground
+    | TypVar of string
+    | TypArrow of typ * typ
+    | TypTuple of typ list
+    | TypCtor of string * typ list
+
+  type pattern =
+    | PatUnit
+    | PatVariable of string
+    | PatTuple of pattern list
+    | PatCtor of string * pattern
+    | PatWildcard
+    | PatListCons of pattern * pattern
+    | PatLiteral of literal
+    | PatEmptyList
+
+  type typed_pattern = pattern * typ
+
   type ite_body = { cond : expr; thenBranch : expr; elseBranch : expr }
-  and lambda_body = { arg : pattern; body : expr }
+
+  and lambda_body = { arg : typed_pattern; body : expr }
 
   and expr =
     | TupleInit of expr list
@@ -40,9 +59,12 @@ module Ast = struct
     result : expr;
   }
 
-  and decl = 
-    | LetDecl of { name : pattern; recursive : bool; body : expr }
-    | ModuleDecl of { name: string; decls: decl list }
+  type let_decl = { name : pattern; body : expr; typ : typ }
+
+  type decl =
+    | LetDeclRecursiveGroup of let_decl list
+    | LetDecl of let_decl
+    | ModuleDecl of { name : string; decls : decl list }
 
   type program = decl list
 end

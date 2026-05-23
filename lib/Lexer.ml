@@ -44,19 +44,29 @@ module Lexer = struct
     | "сопоставить" -> Match
     | "с" -> With
     | "когда" -> When
+    | "и" -> And
     | s when is_capital s -> BigIdentifier s
     | s -> SmallIdentifier s
+
+  let unescape_char data =
+    let unescaped = Scanf.unescaped data in
+    match Sedlexing.Utf8.from_string unescaped |> Sedlexing.next with
+    | Some code -> ok @@ CharLiteral code
+    | None -> error "Пустой символьный литерал"
 
   let rec token buf =
     match%sedlex buf with
     | whitespace -> token buf
     | "->" -> ok Arrow
-    | '"', Star (Sub (any, '"')), '"' ->
+    | '"', Star (Sub (any, ('"' | '\\')) | '\\', any), '"' ->
         let s = Sedlexing.Utf8.lexeme buf in
-        ok @@ StringLiteral (String.sub s 1 (String.length s - 2))
-    | '\'', Sub (any, '"'), '\'' ->
-        let s = Sedlexing.lexeme_char buf 1 in
-        ok @@ CharLiteral s
+        let inner = String.sub s 1 (String.length s - 2) in
+        ok @@ StringLiteral (Scanf.unescaped inner)
+    | '\'', (Sub (any, ('\'' | '\\')) | '\\', any), '\'' ->
+        let s = Sedlexing.Utf8.lexeme buf in
+        let inner = String.sub s 1 (String.length s - 2) in
+        if inner = "\"" then ok @@ CharLiteral (Uchar.of_char '"')
+        else unescape_char inner
     | "(" -> ok LPar
     | ")" -> ok RPar
     | "{" -> ok LCbr
@@ -65,6 +75,7 @@ module Lexer = struct
     | "]" -> ok RBr
     | "," -> ok Comma
     | ";" -> ok Semicolon
+    | ":" -> ok Colon
     | "." -> ok Dot
     | "|" -> ok VBar
     | "_" -> ok Wildcard
