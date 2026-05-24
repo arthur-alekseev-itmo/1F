@@ -57,13 +57,19 @@ end = struct
   type env = Typec.ty StringMap.t
   type typec_result = (env, string) result
 
-  let env_to_list = StringMap.to_list
+  module StringSet = Set.Make (String)
 
+  type type_descr = RecordFields of StringSet.t | Ctor of string
+  type types_from_descr = (type_descr, ty) Hashtbl.t
+
+  let types_from_descr : types_from_descr = Hashtbl.create 128
+  let adt_ctor_types : (string, ty) Hashtbl.t = Hashtbl.create 128
+  let env_to_list = StringMap.to_list
   let failf = Format.kasprintf Result.error
   let failf2 = Format.kasprintf Result.error
+  let failf3 = Format.kasprintf Result.error
 
-  let foldlM (f : 'a -> 'b -> ('a, string) result) (ini : 'a) (l : 'b list) :
-      ('a, string) result =
+  let foldlM f (ini : 'a) (l : 'b list) : ('a, string) result =
     List.fold_left
       (fun acc x -> Result.bind acc (fun acc -> f acc x))
       (Result.ok ini) l
@@ -95,25 +101,45 @@ end = struct
         let* converted = mapM ty_of_typ vs in
         Result.ok @@ TTuple converted
     | TypVar v -> Result.ok @@ TVar v
-    | _ -> failwith "TODO: Ty of typ"
+    | TypCtor (c, args) ->
+        let* converted = mapM ty_of_typ args in
+        Result.ok @@ TTyp (c, converted)
 
-  let rec unify (a : ty) (b : ty) =
+  let guard cond msg = if cond then Result.ok () else Result.error msg
+
+  let rec unify_var env vname ty =
+    match Hashtbl.find_opt env vname with
+    | Some(a_ty) ->
+        unify_impl env a_ty ty
+    | None ->
+        Hashtbl.add env vname ty;
+        Result.ok ty
+
+  and unify_impl env (a : ty) (b : ty) =
     match (a, b) with
     | TBasic x, TBasic y when x = y -> Result.ok a
     | TTuple lefts, TTuple rights ->
         let zipped = List.combine lefts rights in
-        let* checked = mapM (fun (a, b) -> unify a b) zipped in
+        let* checked = mapM (fun (a, b) -> unify_impl env a b) zipped in
         Result.ok (TTuple checked)
     | TFun (left_a, left_b), TFun (right_a, right_b) ->
-        let* checked_a = unify left_a right_a in
-        let* checked_b = unify left_b right_b in
+        let* checked_a = unify_impl env left_a right_a in
+        let* checked_b  = unify_impl env left_b right_b in
         Result.ok (TFun (checked_a, checked_b))
-    | TVar a, TVar b ->
-        if a = b then Result.ok (TVar a)
-        else
-          let msg = Format.sprintf "Cannot unify %s %s" a b in
-          Result.error msg
+    | TVar a, TVar b when a = b -> Result.ok (TVar a)
+    | TVar a, _ -> unify_var env a b
+    | _, TVar b -> unify_var env b a
+    | TTyp (a_name, a_args), TTyp (b_name, b_args) ->
+        let msg = Format.sprintf "Cannot unify %s %s" (pp_typ a) (pp_typ b) in
+        let* () = guard (a_name = b_name) msg in
+        let zipped = List.combine a_args b_args in
+        let* checked = mapM (fun (a, b) -> unify_impl env a b) zipped in
+        Result.ok @@ TTyp (a_name, checked)
     | _ -> failf2 "TODO: Unify %s %s" (pp_typ a) (pp_typ b)
+
+  let unify (a : ty) (b : ty) =
+    let env = Hashtbl.create 64 in
+    unify_impl env a b
 
   let infer_literal l =
     let ret x = Result.ok (TBasic x) in
@@ -133,10 +159,19 @@ end = struct
         foldlM (fun acc (v, t) -> deconstruct_pattern v t acc) env zipped
     | PatUnit, TBasic TUnit -> Result.ok env
     | PatLiteral l, _ ->
-      let* literal_ty = infer_literal l in
-      if literal_ty = ty then Result.ok env
-      else let r = Format.sprintf "Bad match with literal: %s %s" (pp_typ literal_ty) (pp_typ ty) in Result.error r
+        let* literal_ty = infer_literal l in
+        let lit_s = pp_typ literal_ty in
+        let ty_s = pp_typ ty in
+        let msg = Format.sprintf "Bad match with literal: %s %s" lit_s ty_s in
+        let* () = guard (literal_ty = ty) msg in
+        Result.ok env
     | PatWildcard, _ -> Result.ok env
+    | PatCtor (name, pat), _ -> (
+        let ctor_ty = StringMap.find_opt name env in
+        match ctor_ty with
+        | Some(TFun (ctor_ty, _)) -> deconstruct_pattern pat ctor_ty env
+        | Some _ -> Result.ok env
+        | None -> failf3 "Cannot find constructor: %s" name)
     | _ -> failwith "TODO: Deconstruct pattern"
 
   let rec substitute vname to_what where =
@@ -158,14 +193,18 @@ end = struct
     match (param, arg) with
     | TVar v, _ -> Result.ok @@ substitute v arg body
     | TBasic _, _ ->
-      let* _ = unify param arg in
-      Result.ok body
+        let* _ = unify param arg in
+        Result.ok body
     | TTuple params, TTuple args ->
         let zipped = List.combine params args in
         foldlM (fun acc (k, v) -> cas k acc v) body zipped
     | TFun (la, lr), TFun (ra, rr) ->
         let* im = cas la body ra in
         cas lr im rr
+    | TTyp (p_name, p_params), TTyp (a_name, a_params) ->
+        let* () = guard (p_name = a_name) "Ctor name mismatch" in
+        let zipped = List.combine p_params a_params in
+        foldlM (fun acc (k, v) -> cas k acc v) body zipped
     | _ -> failwith @@ "TODO: sub " ^ pp_typ param ^ " and " ^ pp_typ arg
 
   let rec infer_expr env expr =
@@ -188,12 +227,11 @@ end = struct
         infer_app f_ty a_ty env
     | IfThenElse body ->
         let* cond_ty = infer_expr env body.cond in
-        print_ty cond_ty;
         let* _ = unify cond_ty (TBasic TBool) in
         let* e_ty = infer_expr env body.elseBranch in
         let* t_ty = infer_expr env body.thenBranch in
         unify e_ty t_ty
-    | Match (scrutinee, branches) ->
+    | Match (scrutinee, branches) -> (
         let* scrutinee_ty = infer_expr env scrutinee in
         let infer_branch branch =
           let* env' = deconstruct_pattern branch.pattern scrutinee_ty env in
@@ -205,18 +243,21 @@ end = struct
           infer_expr env' branch.result
         in
         let* inferred_branches = mapM infer_branch branches in
-        (match inferred_branches with | [] -> Result.error "At least one branch is needed" | h :: t -> foldlM unify h t)
+        match inferred_branches with
+        | [] -> Result.error "At least one branch is needed"
+        | h :: t -> foldlM unify h t)
+    | Ctor name ->
+        let found = StringMap.find_opt name env |> Option.map Result.ok in
+        found
+        |> Option.value
+             ~default:(Result.error @@ "Constructor name not found: " ^ name)
     | _ -> failwith "TODO: Infer expr"
 
   and infer_app (f : ty) (arg : ty) _ =
-    print_endline "Application";
-    print_ty f;
-    print_ty arg;
     match f with
     | TFun (param, body) ->
-      let* res = check_and_substitute param body arg in
-      print_ty res;
-      Result.ok res
+        let* res = check_and_substitute param body arg in
+        Result.ok res
     | t -> failf "Cannot apply non-function: %s" (pp_typ t)
 
   let infer_let_decl name body typ env =
@@ -235,9 +276,27 @@ end = struct
     match decl with
     | LetDecl d -> infer_let_decl d.name d.body d.typ env
     | LetDeclRecursiveGroup decls ->
-      let* env = foldlM (fun e d -> add_decl_to_env d.name d.typ e) env decls in
-      foldlM (fun e d -> infer_let_decl d.name d.body d.typ e) env decls
+        let* env =
+          foldlM (fun e d -> add_decl_to_env d.name d.typ e) env decls
+        in
+        foldlM (fun e d -> infer_let_decl d.name d.body d.typ e) env decls
     | ModuleDecl _ -> failwith "TODO: Module declaration"
+    | AdtDecl (name, generics, adt) ->
+        let typ = TTyp (name, List.map (fun i -> TVar i) generics) in
+        (* TODO: Free vars *)
+        List.iter
+          (fun x -> Hashtbl.add types_from_descr (Ctor x.ctor_name) typ)
+          adt;
+        let add_ctor_as_fun env (ctor : adt_ctor_decl) =
+          match ctor.typ with
+          | None -> StringMap.add ctor.ctor_name typ env |> Result.ok
+          | Some t ->
+              let* ty = ty_of_typ t in
+              let ty' = TFun (ty, typ) in
+              Result.ok @@ StringMap.add ctor.ctor_name ty' env
+        in
+        foldlM add_ctor_as_fun env adt
+    | RecordDecl (_name, _generics, _rcd) -> failwith "TODO: record"
 
   let empty_env =
     let t_int = TBasic TInt in
@@ -251,11 +310,10 @@ end = struct
     let arrow3 a b c = TFun (a, TFun (b, c)) in
     let arrow a b = TFun (a, b) in
     let int_binop_ty = arrow3 t_int t_int t_int in
-    let compare_ty = arrow3 (tvar "#а") (tvar "#а") t_bool in
+    let compare_ty = arrow3 (tvar "а") (tvar "а") t_bool in
 
     StringMap.of_list
-      [
-        ("+", int_binop_ty);
+      [ (* ("+", int_binop_ty);
         ("-", int_binop_ty);
         ("*", int_binop_ty);
         ("/", int_binop_ty);
@@ -267,8 +325,8 @@ end = struct
         ("<>", compare_ty);
         (">=", compare_ty);
         ("<=", compare_ty);
-        ("::", arrow3 (tvar "#а") (t_list "#а") (t_list "#а"));
-        ("@", arrow3 (t_list "#а") (t_list "#а") (t_list "#а"));
+        ("::", arrow3 (tvar "а") (t_list "а") (t_list "а"));
+        ("@", arrow3 (t_list "а") (t_list "а") (t_list "а"));
         ("&&", arrow3 t_bool t_bool t_bool);
         ("||", arrow3 t_bool t_bool t_bool);
         ("не", arrow t_bool t_bool);
@@ -281,8 +339,7 @@ end = struct
         ("символ_из_числа", arrow t_int t_char);
         ("число_из_строки", arrow t_string t_int);
         ("строка_из_числа", arrow t_int t_string);
-        ("прочитай_файл", arrow t_string t_string);
-      ]
+        ("прочитай_файл", arrow t_string t_string); *) ]
 
   let infer (program : program) : typec_result =
     foldlM infer_decl empty_env program

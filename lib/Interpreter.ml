@@ -43,7 +43,7 @@ module Interpreter = struct
     | PatCtor (pname, ppat), VVariant v when pname = v.tag ->
         set_pattern ppat v.value vars
     | PatLiteral x, y when eval_literal x = y -> Ok vars
-    | _ -> Error ("Bad pattern match for " ^ (value_to_string e))
+    | _ -> Error ("Bad pattern match for " ^ value_to_string e)
 
   let set_pattern_force p e v =
     match set_pattern p e v with Ok ok -> ok | Error err -> failwith err
@@ -180,11 +180,11 @@ module Interpreter = struct
   let rec interpret_decl ctx (d : Ast.decl) =
     match d with
     | LetDeclRecursiveGroup decls ->
-        let add_decl_to_ctx ctx (d: Ast.let_decl) =
+        let add_decl_to_ctx ctx (d : Ast.let_decl) =
           let lazy_value = VLazy d.body in
           set_pattern_to_ctx d.name lazy_value ctx
         in
-        let eval_decl ctx (d: Ast.let_decl) =
+        let eval_decl ctx (d : Ast.let_decl) =
           let body' = eval_expr d.body ctx in
           set_pattern_to_ctx d.name body' ctx
         in
@@ -198,6 +198,8 @@ module Interpreter = struct
         let module_ctx = m.decls |> List.fold_left interpret_decl module_ctx in
         let value = VModule { name = m.name; values = module_ctx.locals } in
         set_pattern_to_ctx (Ast.PatVariable m.name) value ctx
+    | AdtDecl _ -> ctx
+    | RecordDecl _ -> ctx
 
   let interpret (p : Ast.program) =
     List.fold_left interpret_decl initial_stack p

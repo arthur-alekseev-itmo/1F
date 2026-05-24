@@ -45,6 +45,8 @@ module Lexer = struct
     | "с" -> With
     | "когда" -> When
     | "и" -> And
+    | "тип" -> Type
+    | "из" -> Of
     | s when is_capital s -> BigIdentifier s
     | s -> SmallIdentifier s
 

@@ -118,8 +118,7 @@ module Parser = struct
         let s_t = to_string t_end in
         let s_x = to_string x in
         let msg =
-          Format.sprintf "Unmatched brackets: got '%s' instead of '%s'" s_x
-            s_t
+          Format.sprintf "Unmatched brackets: got '%s' instead of '%s'" s_x s_t
         in
         hardfail msg ps pe
     | None -> hardfail "Bracket is unmached: EOF" ps pse
@@ -173,8 +172,8 @@ module Parser = struct
     let* name = parse_big_id in
     return @@ Ctor name
 
-let parse_literal =
-  let* t, ps, pe = parse_token (fun _ -> true) in
+  let parse_literal =
+    let* t, ps, pe = parse_token (fun _ -> true) in
     match t with
     | IntLiteral x -> return (IntLiteral x)
     | FloatLiteral x -> return (FloatLiteral x)
@@ -292,8 +291,8 @@ let parse_literal =
       | [ x ] -> return x
       | xs -> return @@ PatTuple xs
     in
-    (pat_literal <|> pat_empty_list <|> pat_wild <|> just_id <|> operator_id <|> ctor_pattern
-   <|> others)
+    (pat_literal <|> pat_empty_list <|> pat_wild <|> just_id <|> operator_id
+   <|> ctor_pattern <|> others)
       input
 
   let parse_operator_value =
@@ -402,9 +401,7 @@ let parse_literal =
   and parse_ite input =
     let inner =
       let* _, ips, ipe = token If in
-      let* cond =
-        must_pos (ips, ipe) parse_expr "Awaited expr after 'если'"
-      in
+      let* cond = must_pos (ips, ipe) parse_expr "Awaited expr after 'если'" in
       let* _, tps, tpe = must_token Then in
       let* thenBranch =
         must_pos (tps, tpe) parse_expr "Awaited expr after 'то'"
@@ -474,7 +471,50 @@ let parse_literal =
     let parser = List.fold_left chainl1 l1_expr operators in
     parser input
 
-  let rec parse_decl input = (parse_module <|> parse_let_decl) input
+  let parse_typ_decl input =
+    let parse_generics =
+      let comma = token Comma in
+      let gens = sep_by ~inner_parser:parse_id ~sep_parser:comma in
+      let* wrapped = wrap (between (Operator "<") (Operator ">") gens) in
+      return @@ Option.value ~default:[] wrapped
+    in
+    let parse_record_type name =
+      let* generics = parse_generics in
+      let* _ = must_token (Operator "=") in
+      let field_decl =
+        let* id = parse_id in
+        let* typ = must_token Colon *> parse_ty in
+        return { field_name = id; typ }
+      in
+      let comma = token Comma in
+      let* data =
+        between LCbr RCbr (sep_by ~inner_parser:field_decl ~sep_parser:comma)
+      in
+      return @@ RecordDecl (name, generics, data)
+    in
+    let parse_adt_type name =
+      let* generics = parse_generics in
+      let* _ = must_token (Operator "=") in
+      let variant_decl =
+        let* id = parse_big_id in
+        let* typ = wrap (token Of *> parse_ty) in
+        return { ctor_name = id; typ }
+      in
+      let msg = "Awaited variant declaration" in
+      let* first_variant = (wrap @@ token VBar) *> must variant_decl msg in
+      let next_variants = token VBar *> must variant_decl msg in
+      let* others = many next_variants in
+      return @@ AdtDecl (name, generics, first_variant :: others)
+    in
+    let inner =
+      let* _ = token Type in
+      let* name = must parse_big_id "Type must have a name" in
+      parse_record_type name <|> parse_adt_type name
+    in
+    inner input
+
+  let rec parse_decl input =
+    (parse_module <|> parse_let_decl <|> parse_typ_decl) input
 
   and parse_module input =
     let inner =
@@ -490,10 +530,12 @@ let parse_literal =
 
   and parse_let_decl input =
     let parse_binding_after_let (lps, lpe) : let_decl parser =
-      let* name = must_pos (lps, lpe) parse_pattern "Let binding must have a name" in
+      let* name =
+        must_pos (lps, lpe) parse_pattern "Let binding must have a name"
+      in
       let* args = many parse_typed_pattern in
       let* typ = must_token Colon *> parse_ty in
-      let* (_, ps, pe) = must_token (Operator "=") in
+      let* _, ps, pe = must_token (Operator "=") in
       let* raw_body = must_pos (ps, pe) parse_expr "Awaited expr after eq" in
       let body =
         List.fold_left
@@ -501,31 +543,28 @@ let parse_literal =
           raw_body (List.rev args)
       in
       let arg_typs = List.map snd args |> List.rev in
-      let typ = List.fold_left (fun b a -> TypArrow(a, b)) typ arg_typs in
+      let typ = List.fold_left (fun b a -> TypArrow (a, b)) typ arg_typs in
       return { name; body; typ }
     in
     let inner =
-      let* (_, lps, lpe) = token Let in
+      let* _, lps, lpe = token Let in
       let* rec_f = wrap (token Rec) in
       let recursive = Option.is_some rec_f in
       match recursive with
-      | true -> 
-        let* main_block = parse_binding_after_let (lps, lpe) in
-        let and_blocks = token And >>= (fun (_, lps, lpe) -> parse_binding_after_let (lps, lpe)) in
-        let* other = many and_blocks in
-        return @@ LetDeclRecursiveGroup (main_block :: other)
+      | true ->
+          let* main_block = parse_binding_after_let (lps, lpe) in
+          let and_blocks =
+            token And >>= fun (_, lps, lpe) -> parse_binding_after_let (lps, lpe)
+          in
+          let* other = many and_blocks in
+          return @@ LetDeclRecursiveGroup (main_block :: other)
       | false ->
-       let* main_block = parse_binding_after_let (lps, lpe) in 
-       return @@ LetDecl main_block
+          let* main_block = parse_binding_after_let (lps, lpe) in
+          return @@ LetDecl main_block
     in
-  inner input
-      
-  let parse_program = 
-    many parse_decl
+    inner input
 
-  let expr_of_string s =
-    Lexer.Lexer.lex_string s |> Result.map parse_program
-  
-  let program_of_string s =
-    Lexer.Lexer.lex_string s |> Result.map parse_program 
+  let parse_program = many parse_decl
+  let expr_of_string s = Lexer.Lexer.lex_string s |> Result.map parse_program
+  let program_of_string s = Lexer.Lexer.lex_string s |> Result.map parse_program
 end

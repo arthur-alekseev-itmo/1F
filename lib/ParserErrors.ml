@@ -9,12 +9,16 @@ module ParserErrors = struct
     let line_num = p_start.pos_lnum in
     let char_start = p_start.pos_cnum - p_start.pos_bol in
     let char_end = p_end.pos_cnum - p_end.pos_bol in
-    let p_char c = Format.sprintf "{\"line\": %d, \"character\": %d}" line_num c in
-    Format.sprintf "{\"start\": %s, \"end\": %s}" (p_char char_start) (p_char char_end)
+    let p_char c =
+      Format.sprintf "{\"line\": %d, \"character\": %d}" line_num c
+    in
+    Format.sprintf "{\"start\": %s, \"end\": %s}" (p_char char_start)
+      (p_char char_end)
 
   let fmt_json _ message (range : Parser.pos * Parser.pos) =
     let range_json = fmt_json_range range in
-    Format.sprintf "{\"message\": \"%s\", \"range\": %s, \"severity\": 1}" message range_json
+    Format.sprintf "{\"message\": \"%s\", \"range\": %s, \"severity\": 1}"
+      message range_json
 
   let fmt_pos file message (position : Parser.pos * Parser.pos) =
     let p_start, p_end = position in

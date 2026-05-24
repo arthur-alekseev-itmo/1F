@@ -35,7 +35,6 @@ module Ast = struct
   type typed_pattern = pattern * typ
 
   type ite_body = { cond : expr; thenBranch : expr; elseBranch : expr }
-
   and lambda_body = { arg : typed_pattern; body : expr }
 
   and expr =
@@ -60,11 +59,15 @@ module Ast = struct
   }
 
   type let_decl = { name : pattern; body : expr; typ : typ }
+  type adt_ctor_decl = { ctor_name : string; typ : typ option }
+  type rcd_field_decl = { field_name : string; typ : typ }
 
   type decl =
     | LetDeclRecursiveGroup of let_decl list
     | LetDecl of let_decl
     | ModuleDecl of { name : string; decls : decl list }
+    | AdtDecl of string * string list * adt_ctor_decl list
+    | RecordDecl of string * string list * rcd_field_decl list
 
   type program = decl list
 end

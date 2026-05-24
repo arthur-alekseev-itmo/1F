@@ -12,7 +12,7 @@ module Builtins = struct
     in
     binop_base inner
 
-    let bool_binop_base op =
+  let bool_binop_base op =
     let inner a b =
       match (a, b) with
       | VBool a, VBool b -> VBool (op a b)
@@ -20,7 +20,7 @@ module Builtins = struct
     in
     binop_base inner
 
-    let bool_not =
+  let bool_not =
     let inner = function
       | VBool s -> VBool (not s)
       | _ -> failwith "Not on non bool"
