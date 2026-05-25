@@ -1,10 +1,11 @@
 open Parser
 open Lexing
+open Ast
 
 module ParserErrors = struct
-  type range = Parser.range
+  type range = Ast.range
 
-  let fmt_json_range (range : Parser.pos * Parser.pos) =
+  let fmt_json_range (range : Ast.pos * Ast.pos) =
     let p_start, p_end = range in
     let line_num = p_start.pos_lnum in
     let char_start = p_start.pos_cnum - p_start.pos_bol in
@@ -15,12 +16,12 @@ module ParserErrors = struct
     Format.sprintf "{\"start\": %s, \"end\": %s}" (p_char char_start)
       (p_char char_end)
 
-  let fmt_json _ message (range : Parser.pos * Parser.pos) =
+  let fmt_json _ message (range : Ast.pos * Ast.pos) =
     let range_json = fmt_json_range range in
     Format.sprintf "{\"message\": \"%s\", \"range\": %s, \"severity\": 1}"
       message range_json
 
-  let fmt_pos file message (position : Parser.pos * Parser.pos) =
+  let fmt_pos file message (position : Ast.pos * Ast.pos) =
     let p_start, p_end = position in
     let line_num = p_start.pos_lnum in
     let char_start, char_end =

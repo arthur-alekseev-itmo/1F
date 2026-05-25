@@ -12,7 +12,7 @@ module PPAst = struct
     | UnitLiteral -> "()"
 
   let rec pp_pattern_ (pat : pattern) =
-    match pat with
+    match fst pat with
     | PatUnit -> "()"
     | PatVariable v -> v
     | PatTuple vs ->
@@ -33,7 +33,7 @@ module PPAst = struct
     | TypFloat -> "дроб"
 
   let rec pp_typ_ (force_par : bool) (typ : typ) : string =
-    match typ with
+    match fst typ with
     | TypGround g -> pp_ground_ g
     | TypVar v -> v
     | TypArrow (l, r) ->
@@ -50,7 +50,7 @@ module PPAst = struct
 
   let rec pp_expr_ (force_par : bool) (offset : string) (expr : expr) =
     let pp_expr_' = pp_expr_ false in
-    match expr with
+    match fst expr with
     | TupleInit vs ->
         let values = List.map (pp_expr_' offset) vs in
         String.concat ", " values |> Fmt.str "(%s)"

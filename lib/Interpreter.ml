@@ -29,7 +29,7 @@ module Interpreter = struct
     | CharLiteral x -> VChar x
 
   let rec set_pattern (p : Ast.pattern) (e : value) vars =
-    match (p, e) with
+    match (fst p, e) with
     | PatEmptyList, VList [] -> Ok vars
     | PatListCons (ph, pt), VList (vh :: vt) ->
         set_pattern ph vh vars >>= fun vars' -> set_pattern pt (VList vt) vars'
@@ -59,18 +59,18 @@ module Interpreter = struct
     | _, Some p -> has_module name p
 
   let rec eval_expr (e : Ast.expr) ctx =
-    match e with
+    match fst e with
     | Const lit -> eval_literal lit
     | Application (callee, arg) ->
         let callee' = eval_expr callee ctx in
         let arg' = eval_expr arg ctx in
         eval_application callee' arg' ctx
     | Value name -> search_in_ctx name ctx
-    | LetIn (true, PatVariable name, expr, body) ->
+    | LetIn (true, (PatVariable name, p), expr, body) ->
         let lazy_value = VLazy expr in
-        let ctx' = set_pattern_to_ctx (PatVariable name) lazy_value ctx in
+        let ctx' = set_pattern_to_ctx (PatVariable name, p) lazy_value ctx in
         let expr' = eval_expr expr ctx' in
-        let ctx'' = set_pattern_to_ctx (PatVariable name) expr' ctx' in
+        let ctx'' = set_pattern_to_ctx (PatVariable name, p) expr' ctx' in
         eval_expr body ctx''
     | LetIn (isrec, pat, expr, body) ->
         if isrec then failwith "This expr cannot be recursive"
@@ -121,7 +121,7 @@ module Interpreter = struct
       match set_pattern branch.pattern scrutinee ctx.locals with
       | Ok locals ->
           let ctx' = { ctx with locals } in
-          let t = Ast.Const (BoolLiteral true) in
+          let t = (Ast.Const (BoolLiteral true), Ast.Unknown) in
           let when_clause = Option.value ~default:t branch.when_clause in
           let guard_result = eval_expr when_clause ctx' in
           if guard_result = VBool true then Ok (eval_expr branch.result ctx')
@@ -197,7 +197,7 @@ module Interpreter = struct
         let module_ctx = { parent = Some ctx; locals = StringMap.empty } in
         let module_ctx = m.decls |> List.fold_left interpret_decl module_ctx in
         let value = VModule { name = m.name; values = module_ctx.locals } in
-        set_pattern_to_ctx (Ast.PatVariable m.name) value ctx
+        set_pattern_to_ctx (Ast.PatVariable m.name, Unknown) value ctx
     | AdtDecl _ -> ctx
     | RecordDecl _ -> ctx
 

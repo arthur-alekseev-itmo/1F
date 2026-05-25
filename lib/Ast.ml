@@ -1,4 +1,7 @@
 module Ast = struct
+  type pos = Lexing.position
+  type range = Known of pos * pos | Unknown | Eof
+
   type literal =
     | IntLiteral of int
     | FloatLiteral of float
@@ -15,14 +18,16 @@ module Ast = struct
     | TypBool
     | TypFloat
 
-  type typ =
+  type typ_content =
     | TypGround of typ_ground
     | TypVar of string
     | TypArrow of typ * typ
     | TypTuple of typ list
     | TypCtor of string * typ list
 
-  type pattern =
+  and typ = typ_content * range
+
+  type pattern_content =
     | PatUnit
     | PatVariable of string
     | PatTuple of pattern list
@@ -32,12 +37,14 @@ module Ast = struct
     | PatLiteral of literal
     | PatEmptyList
 
+  and pattern = pattern_content * range
+
   type typed_pattern = pattern * typ
 
   type ite_body = { cond : expr; thenBranch : expr; elseBranch : expr }
   and lambda_body = { arg : typed_pattern; body : expr }
 
-  and expr =
+  and expr_content =
     | TupleInit of expr list
     | Const of literal
     | Value of string
@@ -52,6 +59,8 @@ module Ast = struct
     | Match of expr * match_pattern_branch list
     | EmptyList
 
+  and expr = expr_content * range
+
   and match_pattern_branch = {
     pattern : pattern;
     when_clause : expr option;
@@ -62,12 +71,14 @@ module Ast = struct
   type adt_ctor_decl = { ctor_name : string; typ : typ option }
   type rcd_field_decl = { field_name : string; typ : typ }
 
+  type generic_var = string * range
+
   type decl =
     | LetDeclRecursiveGroup of let_decl list
     | LetDecl of let_decl
     | ModuleDecl of { name : string; decls : decl list }
-    | AdtDecl of string * string list * adt_ctor_decl list
-    | RecordDecl of string * string list * rcd_field_decl list
+    | AdtDecl of string * generic_var list * adt_ctor_decl list
+    | RecordDecl of string * generic_var list * rcd_field_decl list
 
   type program = decl list
 end
