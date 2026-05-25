@@ -61,16 +61,14 @@ end = struct
 
   let env_to_list = StringMap.to_list
   let logging_offset = ref ""
+
   let range_or p1 p2 =
-    match p1 with
-    | Unknown -> p2
-    | Eof when p2 <> Unknown -> p2
-    | _ -> p1
+    match p1 with Unknown -> p2 | Eof when p2 <> Unknown -> p2 | _ -> p1
 
   let err position message =
     Result.error ({ position; message } : ParserErrors.t)
 
-  module Subst = Hashtbl.Make (Typec)
+  let aliases = Hashtbl.create 128
 
   let foldlM f (ini : 'a) (l : 'b list) : ('a, typec_err) result =
     List.fold_left
@@ -128,7 +126,21 @@ end = struct
     | TTuple tys | TTyp (_, tys) -> List.exists (occurs_check env vname) tys
     | TBasic _ -> false
 
+  let rec expand_alias_body (typ : t) =
+    match (fst typ) with
+    | TTyp (name, args) when Hashtbl.mem aliases name ->
+      let (ty, generics) = Hashtbl.find aliases name in
+      let msg = "Generic argument mismatch in type alias" in
+      let* () = guard (snd typ) (List.length args = List.length generics) msg in
+      let zipped = List.combine args generics in
+      let subst = Hashtbl.create 16 in
+      List.iter (fun (k, v) -> Hashtbl.add subst v k) zipped;
+      Result.ok @@ prune subst ty
+    | _ -> Result.ok typ
+
   let rec unify_impl env (a : t) (b : t) =
+    let* a = expand_alias_body a in
+    let* b = expand_alias_body b in
     let a = prune env a in
     let b = prune env b in
     let p = range_or (snd a) (snd b) in
@@ -170,7 +182,9 @@ end = struct
         let msg = Fmt.str "Cannot unify %s with %s" (pp_typ a) (pp_typ b) in
         err p msg
 
-  let unify subst_env (a : t) (b : t) = unify_impl subst_env a b
+  let unify subst_env (a : t) (b : t) =
+    unify_impl subst_env a b
+
   let current_id = ref 0
 
   let new_tvar () =
@@ -188,6 +202,7 @@ end = struct
     | BoolLiteral _ -> ret TBool
 
   let rec deconstruct_pattern subst_env (pat : pattern) (ty : t) env =
+    let* ty = expand_alias_body ty in
     let ty = prune subst_env ty in
     match (fst pat, fst ty) with
     | PatWildcard, _ -> Result.ok env
@@ -226,6 +241,17 @@ end = struct
         deconstruct_pattern subst_env t ty env
     | _ -> failwith "Pattern matching type mismatch"
 
+  let instantiate_poly (ty : t) : t =
+    let rec inst (ty : t) : t =
+      match fst ty with
+      | TVar _ -> (new_tvar (), snd ty)  (* ВСЕГДА создаём свежую *)
+      | TFun (l, r) -> (TFun (inst l, inst r), snd ty)
+      | TTuple tys -> (TTuple (List.map inst tys), snd ty)
+      | TTyp (name, args) -> (TTyp (name, List.map inst args), snd ty)
+      | TBasic _ -> ty
+    in
+    inst ty
+
   let rec infer_expr' subst_env env expr : (t, typec_err) result =
     match fst expr with
     | Const l ->
@@ -234,8 +260,8 @@ end = struct
     | Value n | Ctor n -> (
         match StringMap.find_opt n env with
         | Some t ->
-            let typec, _prev_pos = prune subst_env t in
-            Result.ok (typec, snd expr)
+            let t_instantiated = instantiate_poly t in
+            Result.ok (prune subst_env t_instantiated)
         | None -> err (snd expr) @@ "Name not found: " ^ n)
     | TupleInit vs ->
         let* typs = mapM (infer_expr subst_env env) vs in
@@ -290,7 +316,9 @@ end = struct
         let* res_ty = infer_expr subst_env env in_expr in
         Result.ok res_ty
     | EmptyList -> Result.ok (TTyp ("Список", [ (TVar "_", Unknown) ]), snd expr)
-    | _ -> failwith "TODO: Infer expr"
+    | RecordInit _ -> failwith "TODO"
+    | RecordUpdate _ -> failwith "TODO"
+    | FieldAccess _ -> failwith "TODO"
 
   and infer_expr a b e =
     Fmt.pr "%s-> Inferring %s\n" !logging_offset (PPAst.PPAst.pp_expr e);
@@ -336,6 +364,10 @@ end = struct
               Result.ok @@ StringMap.add ctor.ctor_name ty' env
         in
         foldlM add_ctor_as_fun env adt
+    | AliasDecl (name, generics, ty) ->
+        let* ty = ty_of_typ ty in
+        Hashtbl.replace aliases name (ty, List.map fst generics);
+        Result.ok env
     | RecordDecl _ -> failwith "TODO: record"
 
   let empty_env =

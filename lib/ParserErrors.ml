@@ -21,7 +21,7 @@ module ParserErrors = struct
     Format.sprintf "{\"message\": \"%s\", \"range\": %s, \"severity\": 1}"
       message range_json
 
-  let fmt_pos file message (position : Ast.pos * Ast.pos) =
+  let fmt_pos filename file message (position : Ast.pos * Ast.pos) =
     let p_start, p_end = position in
     let line_num = p_start.pos_lnum in
     let char_start, char_end =
@@ -29,8 +29,8 @@ module ParserErrors = struct
     in
     let lines = file |> String.split_on_char '\n' in
     let heading =
-      Format.sprintf "File: ??, line: %d, characters %d-%d:" line_num char_start
-        char_end
+      Format.sprintf "File: %s, line: %d, characters %d-%d:" filename line_num
+        char_start char_end
     in
     let content = List.nth lines (line_num - 1) in
     let underline =
@@ -38,7 +38,8 @@ module ParserErrors = struct
     in
     Format.sprintf "%s\n%s\n%s\n%s" heading content underline message
 
-  let fmt (filename: string) (file : string) (message : string) (position : range) =
+  let fmt (filename : string) (file : string) (message : string)
+      (position : range) =
     let eof_pos =
       {
         pos_fname = filename;
@@ -48,13 +49,13 @@ module ParserErrors = struct
       }
     in
     match position with
-    | Known (ps, pe) -> fmt_pos file message (ps, pe)
+    | Known (ps, pe) -> fmt_pos filename file message (ps, pe)
     | Eof ->
-        fmt_pos file message
+        fmt_pos filename file message
           (eof_pos, { eof_pos with pos_cnum = eof_pos.pos_cnum + 1 })
     | Unknown -> message ^ " (position unknown)"
 
-  let print (filename: string) (file: string) (error : t) =
+  let print (filename : string) (file : string) (error : t) =
     let message = fmt filename file error.message error.position in
     Format.printf "%s" message
 end

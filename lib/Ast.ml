@@ -76,6 +76,7 @@ module Ast = struct
     | LetDeclRecursiveGroup of let_decl list
     | LetDecl of let_decl
     | ModuleDecl of { name : string; decls : decl list }
+    | AliasDecl of string * generic_var list * typ
     | AdtDecl of string * generic_var list * adt_ctor_decl list
     | RecordDecl of string * generic_var list * rcd_field_decl list
 

@@ -538,6 +538,12 @@ module Parser = struct
       in
       return @@ RecordDecl (name, generics, data)
     in
+    let parse_alias_type name =
+      let* generics = parse_generics in
+      let* _ = must_token (Operator "=") in
+      let* ty = parse_ty in
+      return @@ AliasDecl (name, generics, ty)
+    in
     let parse_adt_type name =
       let* generics = parse_generics in
       let* _ = must_token (Operator "=") in
@@ -552,12 +558,17 @@ module Parser = struct
       let* others = many next_variants in
       return @@ AdtDecl (name, generics, first_variant :: others)
     in
-    let inner =
+    let type_type =
       let* _ = token Type in
       let* name, _ = must parse_big_id "Type must have a name" in
       parse_record_type name <|> parse_adt_type name
     in
-    inner input
+    let alias_type =
+      let* _ = token TypeAlias in
+      let* name, _ = must parse_big_id "Alias must have a name" in
+      parse_alias_type name
+    in
+    (type_type <|> alias_type) input
 
   let rec parse_decl input =
     (parse_module <|> parse_let_decl <|> parse_typ_decl) input

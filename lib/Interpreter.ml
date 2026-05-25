@@ -13,7 +13,7 @@ module Interpreter = struct
     match (StringMap.find_opt name ctx.locals, ctx.parent) with
     | None, None ->
         print_endline name;
-        failwith @@ "Value not found : " ^ name
+        failwith @@ "Value not found: " ^ name
     | Some x, _ -> x
     | None, Some p -> search_in_ctx name p
 
@@ -199,6 +199,7 @@ module Interpreter = struct
         let value = VModule { name = m.name; values = module_ctx.locals } in
         set_pattern_to_ctx (Ast.PatVariable m.name, Unknown) value ctx
     | AdtDecl _ -> ctx
+    | AliasDecl _ -> ctx
     | RecordDecl _ -> ctx
 
   let interpret (p : Ast.program) =

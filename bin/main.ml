@@ -19,7 +19,10 @@ let speclist =
       Arg.Bool (fun x -> use_stdout := x),
       "Use stdout instead of outputting to a file" );
     ( "--stdin",
-      Arg.Bool (fun x -> use_stdin := x; input_file := "stdin"),
+      Arg.Bool
+        (fun x ->
+          use_stdin := x;
+          input_file := "stdin"),
       "Use stdin instead of reading a file" );
   ]
 

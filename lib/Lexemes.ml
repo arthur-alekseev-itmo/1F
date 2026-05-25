@@ -15,6 +15,7 @@ module Lexemes = struct
     | BigIdentifier of string
     | Lambda
     | Type
+    | TypeAlias
     | Eof
     | LCbr
     | RCbr
@@ -86,6 +87,7 @@ module Lexemes = struct
     | When -> "когда"
     | Colon -> "двоеточие"
     | And -> "и"
+    | TypeAlias -> "алиас"
 
   let write_file (path : string) (content : string) =
     try
