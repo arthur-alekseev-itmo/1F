@@ -15,6 +15,7 @@ module Lexemes = struct
     | BigIdentifier of string
     | Lambda
     | Type
+    | TypeAlias
     | Eof
     | LCbr
     | RCbr
@@ -27,6 +28,7 @@ module Lexemes = struct
     | Else
     | VBar
     | Semicolon
+    | Colon
     | Of
     | Dot
     | Comma
@@ -37,6 +39,7 @@ module Lexemes = struct
     | Match
     | With
     | When
+    | And
 
   let uchar_to_string u =
     let b = Buffer.create 4 in
@@ -82,6 +85,9 @@ module Lexemes = struct
     | Match -> "сопоставить"
     | With -> "с"
     | When -> "когда"
+    | Colon -> "двоеточие"
+    | And -> "и"
+    | TypeAlias -> "алиас"
 
   let write_file (path : string) (content : string) =
     try

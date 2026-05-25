@@ -1,6 +1,8 @@
 open OneF.Interpreter
 open OneF.Parser
 open OneF.ParserErrors
+open OneF.LocalTypec
+open OneF.Lexemes
 
 let input_file = ref "вход.1ф"
 let output_file = ref None
@@ -17,7 +19,10 @@ let speclist =
       Arg.Bool (fun x -> use_stdout := x),
       "Use stdout instead of outputting to a file" );
     ( "--stdin",
-      Arg.Bool (fun x -> use_stdin := x),
+      Arg.Bool
+        (fun x ->
+          use_stdin := x;
+          input_file := "stdin"),
       "Use stdin instead of reading a file" );
   ]
 
@@ -30,18 +35,24 @@ let read_file path =
 
 let read_string () =
   match !use_stdin with
-  | true -> Ok (In_channel.input_all In_channel.stdin)
+  | true -> Ok (read_line ())
   | false -> read_file !input_file
 
 let main () =
   let ( let* ) = Result.bind in
   Arg.parse speclist ignore usage_msg;
   let* input = read_string () in
-  let* parse_result = Parser.program_of_string input in
-  match parse_result with
-  | Parser.Parsed (r, _) -> Interpreter.interpret r |> ignore |> Result.ok
-  | Parser.Failed (msg, range) -> Result.ok @@ ParserErrors.print input msg range
-  | Parser.HardFailed (msg, range) -> Result.ok @@ ParserErrors.print input msg range
+  match Parser.program_of_string input with
+  | Result.Ok program -> (
+      match LocalTypec.infer program with
+      | Result.Ok typec ->
+          let typec = LocalTypec.env_to_list typec in
+          List.iter
+            (fun (k, v) -> Format.printf "%s: %s\n" k (Typec.pp_typ v))
+            typec;
+          Interpreter.interpret program |> ignore |> Result.ok
+      | Result.Error e -> Result.ok @@ ParserErrors.print !input_file input e)
+  | Result.Error e -> Result.ok @@ ParserErrors.print !input_file input e
 
 let () =
   match main () with

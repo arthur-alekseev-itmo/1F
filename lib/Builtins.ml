@@ -12,6 +12,21 @@ module Builtins = struct
     in
     binop_base inner
 
+  let bool_binop_base op =
+    let inner a b =
+      match (a, b) with
+      | VBool a, VBool b -> VBool (op a b)
+      | _ -> failwith "Cannot apply int operator to non int"
+    in
+    binop_base inner
+
+  let bool_not =
+    let inner = function
+      | VBool s -> VBool (not s)
+      | _ -> failwith "Not on non bool"
+    in
+    VBuiltin inner
+
   let print =
     let inner = function
       | VString s ->
@@ -87,7 +102,14 @@ module Builtins = struct
     VBuiltin inner
 
   let implode_string =
-    let get_uchars = function VChar x -> x | _ -> failwith "Expected char" in
+    let get_uchars = function
+      | VChar x -> x
+      | e ->
+          let msg =
+            Format.sprintf "Expected char, got: %s" (value_to_string e)
+          in
+          failwith msg
+    in
     let inner x =
       match x with
       | VList x ->
@@ -129,6 +151,17 @@ module Builtins = struct
     in
     VBuiltin inner
 
+  let read_file =
+    let inner path =
+      match path with
+      | VString s ->
+          let path = CCUtf8_string.to_string s in
+          let content = In_channel.with_open_text path In_channel.input_all in
+          VString (CCUtf8_string.of_string_exn content)
+      | _ -> failwith "Path to file was not string"
+    in
+    VBuiltin inner
+
   let builtin_name_pairs =
     [
       ("+", int_binop_base ( + ));
@@ -143,6 +176,9 @@ module Builtins = struct
       ("<>", polycompare_base (( <> ) 0));
       (">=", polycompare_base (( <> ) (-1)));
       ("<=", polycompare_base (( <> ) 1));
+      ("&&", bool_binop_base ( && ));
+      ("||", bool_binop_base ( || ));
+      ("не", bool_not);
       ("::", list_const);
       ("@", list_concat);
       ("напечатай", print);
@@ -154,6 +190,7 @@ module Builtins = struct
       ("символ_из_числа", char_of_int);
       ("число_из_строки", int_of_string);
       ("строка_из_числа", string_of_int);
+      ("прочитай_файл", read_file);
     ]
 
   let builtins = builtin_name_pairs |> List.to_seq |> StringMap.of_seq

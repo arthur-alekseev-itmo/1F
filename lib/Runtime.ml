@@ -21,7 +21,7 @@ module Runtime = struct
 
   and variant_data = { tag : string; value : value }
   and closure_data = { f : Ast.lambda_body; captured : value StringMap.t }
-  and module_data = { name: string; values : value StringMap.t }
+  and module_data = { name : string; values : value StringMap.t }
 
   type stackframe = { parent : stackframe option; locals : value StringMap.t }
 

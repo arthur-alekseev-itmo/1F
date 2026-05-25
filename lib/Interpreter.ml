@@ -12,8 +12,8 @@ module Interpreter = struct
   let rec search_in_ctx (name : string) ctx =
     match (StringMap.find_opt name ctx.locals, ctx.parent) with
     | None, None ->
-      print_endline name;
-      failwith @@ "Value not found : " ^ name
+        print_endline name;
+        failwith @@ "Value not found: " ^ name
     | Some x, _ -> x
     | None, Some p -> search_in_ctx name p
 
@@ -29,7 +29,7 @@ module Interpreter = struct
     | CharLiteral x -> VChar x
 
   let rec set_pattern (p : Ast.pattern) (e : value) vars =
-    match (p, e) with
+    match (fst p, e) with
     | PatEmptyList, VList [] -> Ok vars
     | PatListCons (ph, pt), VList (vh :: vt) ->
         set_pattern ph vh vars >>= fun vars' -> set_pattern pt (VList vt) vars'
@@ -42,7 +42,8 @@ module Interpreter = struct
         List.fold_left folder (Ok vars) zipped
     | PatCtor (pname, ppat), VVariant v when pname = v.tag ->
         set_pattern ppat v.value vars
-    | _ -> Error "Bad pattern match"
+    | PatLiteral x, y when eval_literal x = y -> Ok vars
+    | _ -> Error ("Bad pattern match for " ^ value_to_string e)
 
   let set_pattern_force p e v =
     match set_pattern p e v with Ok ok -> ok | Error err -> failwith err
@@ -51,24 +52,25 @@ module Interpreter = struct
     let locals = set_pattern_force p e ctx.locals in
     { ctx with locals }
 
-  let has_module c ctx =
-    match StringMap.find_opt c ctx with
-    | Some(VModule _) -> true
-    | _ -> false
+  let rec has_module name ctx =
+    match (StringMap.find_opt name ctx.locals, ctx.parent) with
+    | Some (VModule _), _ -> true
+    | _, None -> false
+    | _, Some p -> has_module name p
 
   let rec eval_expr (e : Ast.expr) ctx =
-    match e with
+    match fst e with
     | Const lit -> eval_literal lit
     | Application (callee, arg) ->
         let callee' = eval_expr callee ctx in
         let arg' = eval_expr arg ctx in
         eval_application callee' arg' ctx
     | Value name -> search_in_ctx name ctx
-    | LetIn (true, PatVariable name, expr, body) ->
+    | LetIn (true, (PatVariable name, p), expr, body) ->
         let lazy_value = VLazy expr in
-        let ctx' = set_pattern_to_ctx (PatVariable name) lazy_value ctx in
+        let ctx' = set_pattern_to_ctx (PatVariable name, p) lazy_value ctx in
         let expr' = eval_expr expr ctx' in
-        let ctx'' = set_pattern_to_ctx (PatVariable name) expr' ctx' in
+        let ctx'' = set_pattern_to_ctx (PatVariable name, p) expr' ctx' in
         eval_expr body ctx''
     | LetIn (isrec, pat, expr, body) ->
         if isrec then failwith "This expr cannot be recursive"
@@ -82,8 +84,7 @@ module Interpreter = struct
     | TupleInit xs ->
         let xs' = List.map (fun e -> eval_expr e ctx) xs in
         VTuple xs'
-    | Ctor c when has_module c ctx.locals -> 
-         search_in_ctx c ctx
+    | Ctor c when has_module c ctx -> search_in_ctx c ctx
     | Ctor c -> VVariant { tag = c; value = VUnit }
     | FieldAccess (target, field) ->
         let target' = eval_expr target ctx in
@@ -94,15 +95,33 @@ module Interpreter = struct
     | RecordInit fields ->
         let kvs = List.map (fun (k, v) -> (k, eval_expr v ctx)) fields in
         kvs |> List.to_seq |> StringMap.of_seq |> fun m -> VRecord m
-    | RecordUpdate _ -> failwith "TODO: Record update"
+    | RecordUpdate (v, updates) ->
+        let v' = eval_expr v ctx in
+        let updates' =
+          List.map (fun (name, e) -> (name, eval_expr e ctx)) updates
+        in
+        update_record v' updates' ctx
     | EmptyList -> VList []
+
+  and update_record (v : value) (updates : (string * value) list) _ctx =
+    match v with
+    | VRecord r ->
+        let r' =
+          List.fold_left (fun m (k, v) -> StringMap.add k v m) r updates
+        in
+        VRecord r'
+    | e ->
+        let msg =
+          Format.sprintf "Cannot update non-record: %s" (value_to_string e)
+        in
+        failwith msg
 
   and eval_match (scrutinee : value) branches ctx =
     let try_branch (branch : Ast.match_pattern_branch) =
       match set_pattern branch.pattern scrutinee ctx.locals with
       | Ok locals ->
           let ctx' = { ctx with locals } in
-          let t = Ast.Const (BoolLiteral true) in
+          let t = (Ast.Const (BoolLiteral true), Ast.Unknown) in
           let when_clause = Option.value ~default:t branch.when_clause in
           let guard_result = eval_expr when_clause ctx' in
           if guard_result = VBool true then Ok (eval_expr branch.result ctx')
@@ -110,7 +129,10 @@ module Interpreter = struct
       | Error e -> Error e
     in
     match branches with
-    | [] -> failwith "Non exhaustive match"
+    | [] ->
+        let msg = value_to_string scrutinee in
+        print_endline msg;
+        failwith "Non exhaustive match"
     | h :: t -> (
         match try_branch h with
         | Ok v -> v
@@ -124,12 +146,24 @@ module Interpreter = struct
     | _ -> failwith "Awaited bool"
 
   and eval_field_access (target : value) (field : string) _ =
+    let find x m =
+      match StringMap.find_opt x m with
+      | Some x -> x
+      | None ->
+          let msg = Format.sprintf "Key %s was not found" x in
+          print_endline msg;
+          failwith msg
+    in
     match target with
-    | VRecord r -> StringMap.find field r
-    | VModule m -> StringMap.find field m.values
-    | e -> 
-      let message = Format.sprintf "Can only lookup value in record or module. Got: %s" (value_to_string e) in
-      failwith message
+    | VRecord r -> find field r
+    | VModule m -> find field m.values
+    | e ->
+        print_endline (value_to_string e);
+        let message =
+          Format.sprintf "Can only lookup value in record or module. Got: %s"
+            (value_to_string e)
+        in
+        failwith message
 
   and unlazy v ctx = match v with VLazy x -> eval_expr x ctx | e -> e
 
@@ -137,7 +171,7 @@ module Interpreter = struct
     match unlazy callee ctx with
     | VBuiltin b -> b arg
     | VClosure closure ->
-        let cap' = set_pattern_force closure.f.arg arg closure.captured in
+        let cap' = set_pattern_force (fst closure.f.arg) arg closure.captured in
         let ctx' = { parent = Some ctx; locals = cap' } in
         eval_expr closure.f.body ctx'
     | VVariant v when v.value = VUnit -> VVariant { v with value = arg }
@@ -145,11 +179,17 @@ module Interpreter = struct
 
   let rec interpret_decl ctx (d : Ast.decl) =
     match d with
-    | LetDecl { recursive = true; name = PatVariable(name); body } ->
-        let lazy_value = VLazy body in
-        let ctx' = set_pattern_to_ctx (PatVariable name) lazy_value ctx in
-        let body' = eval_expr body ctx' in
-        set_pattern_to_ctx (Ast.PatVariable name) body' ctx'
+    | LetDeclRecursiveGroup decls ->
+        let add_decl_to_ctx ctx (d : Ast.let_decl) =
+          let lazy_value = VLazy d.body in
+          set_pattern_to_ctx d.name lazy_value ctx
+        in
+        let eval_decl ctx (d : Ast.let_decl) =
+          let body' = eval_expr d.body ctx in
+          set_pattern_to_ctx d.name body' ctx
+        in
+        let ctx' = List.fold_left add_decl_to_ctx ctx decls in
+        List.fold_left eval_decl ctx' decls
     | LetDecl d ->
         let value' = eval_expr d.body ctx in
         set_pattern_to_ctx d.name value' ctx
@@ -157,12 +197,15 @@ module Interpreter = struct
         let module_ctx = { parent = Some ctx; locals = StringMap.empty } in
         let module_ctx = m.decls |> List.fold_left interpret_decl module_ctx in
         let value = VModule { name = m.name; values = module_ctx.locals } in
-        set_pattern_to_ctx (Ast.PatVariable m.name) value ctx
+        set_pattern_to_ctx (Ast.PatVariable m.name, Unknown) value ctx
+    | AdtDecl _ -> ctx
+    | AliasDecl _ -> ctx
+    | RecordDecl _ -> ctx
 
   let interpret (p : Ast.program) =
     List.fold_left interpret_decl initial_stack p
 
-  let eval_string s =
+  (* let eval_string s =
     let run = function
       | Parser.Parser.Parsed (r, _) ->
           eval_expr r initial_stack |> value_to_string |> print_endline
@@ -171,5 +214,5 @@ module Interpreter = struct
     in
     Lexer.Lexer.lex_string s
     |> Result.map (fun x -> Parser.Parser.parse_expr x)
-    |> Result.iter run
+    |> Result.iter run *)
 end
