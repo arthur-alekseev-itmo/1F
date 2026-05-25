@@ -1,5 +1,6 @@
 open Lexemes.Lexemes
 open Ast.Ast
+open ParserErrors
 
 module Parser = struct
   type token = t * pos * pos
@@ -438,8 +439,7 @@ module Parser = struct
       let* body = must_pos ip parse_expr "Awaited expr after 'в'" in
       let fun_expr =
         List.fold_left
-          (fun (body, b_p) arg ->
-            (Lambda { arg; body = (body, b_p) }, b_p))
+          (fun (body, b_p) arg -> (Lambda { arg; body = (body, b_p) }, b_p))
           value (List.rev args)
       in
       let p = mrg lp (snd body) in
@@ -452,13 +452,9 @@ module Parser = struct
       let* _, ip = token If in
       let* cond = must_pos ip parse_expr "Awaited expr after 'если'" in
       let* _, tp = must_token Then in
-      let* thenBranch =
-        must_pos tp parse_expr "Awaited expr after 'то'"
-      in
+      let* thenBranch = must_pos tp parse_expr "Awaited expr after 'то'" in
       let* _, ep = must_token Else in
-      let* elseBranch =
-        must_pos ep parse_expr "Awaited expr after 'иначе'"
-      in
+      let* elseBranch = must_pos ep parse_expr "Awaited expr after 'иначе'" in
       return @@ (IfThenElse { cond; thenBranch; elseBranch }, mrg ip ep)
     in
     inner input
@@ -476,21 +472,21 @@ module Parser = struct
     let inner =
       let* _, lp = token Lambda in
       let parse_args =
-        must_pos (lp) (some parse_typed_pattern)
-          "Awaited at least one pattern"
+        must_pos lp (some parse_typed_pattern) "Awaited at least one pattern"
       in
       let* args = parse_args in
       let* _, ap = must_token Arrow in
-      let* body =
-        must_pos ap parse_expr "Awaited expr in lambda body"
-      in
-      return @@ List.fold_left (fun (body, p) arg -> Lambda { body = (body, p); arg }, p) body args
+      let* body = must_pos ap parse_expr "Awaited expr in lambda body" in
+      return
+      @@ List.fold_left
+           (fun (body, p) arg -> (Lambda { body = (body, p); arg }, p))
+           body args
     in
     inner input
 
   and parse_match input =
     let inner =
-      let* (scrutinee, s_p) = token Match *> parse_expr <* must_token With in
+      let* scrutinee, s_p = token Match *> parse_expr <* must_token With in
       let* first_branch = (wrap @@ token VBar) *> match_branch in
       let* other_branches = many @@ (token VBar *> match_branch) in
       let branches = first_branch :: other_branches in
@@ -569,7 +565,9 @@ module Parser = struct
   and parse_module input =
     let inner =
       let* _ = token Module in
-      let* name, _ = must parse_big_id "Module must have a name (capitalized)" in
+      let* name, _ =
+        must parse_big_id "Module must have a name (capitalized)"
+      in
       let* _ = must_token (Operator "=") in
       let* _ = must_token Struct in
       let* decls = many parse_decl in
@@ -580,9 +578,7 @@ module Parser = struct
 
   and parse_let_decl input =
     let parse_binding_after_let lp : let_decl parser =
-      let* name =
-        must_pos lp parse_pattern "Let binding must have a name"
-      in
+      let* name = must_pos lp parse_pattern "Let binding must have a name" in
       let* args = many parse_typed_pattern in
       let* typ = must_token Colon *> parse_ty in
       let* _, p = must_token (Operator "=") in
@@ -593,7 +589,11 @@ module Parser = struct
           raw_body (List.rev args)
       in
       let arg_typs = List.map snd args |> List.rev in
-      let typ = List.fold_left (fun b a -> TypArrow (a, b), mrg (snd a) (snd b)) typ arg_typs in
+      let typ =
+        List.fold_left
+          (fun b a -> (TypArrow (a, b), mrg (snd a) (snd b)))
+          typ arg_typs
+      in
       return { name; body; typ }
     in
     let inner =
@@ -615,6 +615,40 @@ module Parser = struct
     inner input
 
   let parse_program = many parse_decl
-  let expr_of_string s = Lexer.Lexer.lex_string s |> Result.map parse_program
-  let program_of_string s = Lexer.Lexer.lex_string s |> Result.map parse_program
+  let expr_of_string_ s = Lexer.Lexer.lex_string s |> Result.map parse_program
+
+  let program_of_string_ s =
+    Lexer.Lexer.lex_string s |> Result.map parse_program
+
+  let error_on msg position =
+    Result.error ({ message = msg; position } : ParserErrors.t)
+
+  let program_of_string s : (program, ParserErrors.t) result =
+    match Lexer.Lexer.lex_string s with
+    | Result.Error msg -> error_on msg Unknown
+    | Result.Ok e -> (
+        match parse_program e with
+        | Parsed (e, []) -> Result.ok e
+        | Parsed (_, (_, ps, pe) :: _) ->
+            error_on "Unparsed tail :sob:" (Known (ps, pe))
+        | Failed (msg, p) -> error_on msg p
+        | HardFailed (msg, p) -> error_on msg p)
+
+  let take1 =
+    "Безопасность, все данные анонимизированы и хранятся в отрыве от \
+     пользователей. Их сложно использовать для рекламы и злых целей так что \
+     нич страшного"
+
+  let take0 =
+    "Так как мы знаем что все хорошо нет утечек и тд, и так как мы не хотим \
+     чтобы пользователи отказывались из страха перед новой технологией то \
+     абсолютно оправданно сделать в шадоу тесте по умолчанию согласие"
+
+  let take2 =
+    "Хранятся 12 месяцев, есть сезонные болезни, и малый срок не позволит \
+     проверить правильность можели на болезнях свойственным другому сеону"
+
+  let take3 =
+    "Сервис не используется для принятия решений, а просто для проверки работы \
+     нейросети"
 end

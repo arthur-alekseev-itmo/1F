@@ -204,7 +204,7 @@ module Interpreter = struct
   let interpret (p : Ast.program) =
     List.fold_left interpret_decl initial_stack p
 
-  let eval_string s =
+  (* let eval_string s =
     let run = function
       | Parser.Parser.Parsed (r, _) ->
           eval_expr r initial_stack |> value_to_string |> print_endline
@@ -213,5 +213,5 @@ module Interpreter = struct
     in
     Lexer.Lexer.lex_string s
     |> Result.map (fun x -> Parser.Parser.parse_expr x)
-    |> Result.iter run
+    |> Result.iter run *)
 end

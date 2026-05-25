@@ -70,7 +70,6 @@ module Ast = struct
   type let_decl = { name : pattern; body : expr; typ : typ }
   type adt_ctor_decl = { ctor_name : string; typ : typ option }
   type rcd_field_decl = { field_name : string; typ : typ }
-
   type generic_var = string * range
 
   type decl =

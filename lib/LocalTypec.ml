@@ -1,4 +1,5 @@
 open Ast.Ast
+open ParserErrors
 module StringMap = Map.Make (String)
 
 module Typec = struct
@@ -22,25 +23,28 @@ module Typec = struct
     | TBool -> "бул"
     | TUnit -> "скиб"
 
-  let rec pp_typ t =
-    match fst t with
+  let rec pp_ty (force_par : bool) (typ : t) : string =
+    match fst typ with
     | TBasic g -> pp_ground g
-    | TTyp (name, args) ->
-        let args = List.map pp_typ args |> String.concat ", " in
-        Format.sprintf "%s<%s>" name args
-    | TVar idx -> Format.sprintf "%s" idx
-    | TFun (l, r) -> Format.sprintf "(%s -> %s)" (pp_typ l) (pp_typ r)
+    | TVar v -> v
+    | TFun (l, r) ->
+        let arr = Fmt.str "%s -> %s" (pp_ty true l) (pp_ty false r) in
+        if force_par then Fmt.str "(%s)" arr else arr
     | TTuple vs ->
-        let vs = List.map pp_typ vs in
-        String.concat " * " vs
+        List.map (pp_ty false) vs |> String.concat ", " |> Fmt.str "(%s)"
+    | TTyp (c, args) ->
+        let args = List.map (pp_ty false) args |> String.concat ", " in
+        Fmt.str "%s<%s>" c args
 
-  let equal (a: t) (b: t) = fst a = fst b
-  let hash (a: t) = Hashtbl.hash (fst a)
+  let pp_typ = pp_ty false
+  let equal (a : t) (b : t) = fst a = fst b
+  let hash (a : t) = Hashtbl.hash (fst a)
 end
 
 module LocalTypec : sig
   type env = Typec.t StringMap.t
-  type typec_result = (env, string) result
+  type typec_err = ParserErrors.t
+  type typec_result = (env, typec_err) result
 
   val infer : program -> typec_result
   val env_to_list : env -> (string * Typec.t) list
@@ -48,32 +52,37 @@ end = struct
   open Typec
 
   type env = Typec.t StringMap.t
-  type typec_result = (env, string) result
+  type typec_err = ParserErrors.t
+  type typec_result = (env, typec_err) result
 
   module StringSet = Set.Make (String)
 
   type type_descr = RecordFields of StringSet.t | Ctor of string
 
   let env_to_list = StringMap.to_list
-  let failf = Format.kasprintf Result.error
-  let failf2 = Format.kasprintf Result.error
-  let failf3 = Format.kasprintf Result.error
   let logging_offset = ref ""
+  let range_or p1 p2 =
+    match p1 with
+    | Unknown -> p2
+    | Eof when p2 <> Unknown -> p2
+    | _ -> p1
 
-  module Subst = Hashtbl.Make(Typec)
+  let err position message =
+    Result.error ({ position; message } : ParserErrors.t)
 
-  let foldlM f (ini : 'a) (l : 'b list) : ('a, string) result =
+  module Subst = Hashtbl.Make (Typec)
+
+  let foldlM f (ini : 'a) (l : 'b list) : ('a, typec_err) result =
     List.fold_left
       (fun acc x -> Result.bind acc (fun acc -> f acc x))
       (Result.ok ini) l
 
-  let mapM (f : 'a -> ('b, string) result) (l : 'a list) :
-      ('b list, string) result =
+  let mapM (f : 'a -> ('b, typec_err) result) (l : 'a list) :
+      ('b list, typec_err) result =
     foldlM (fun acc x -> Result.map (fun x -> x :: acc) (f x)) [] l
     |> Result.map List.rev
 
   let ( let* ) = Result.bind
-  let print_ty t = print_endline (pp_typ t)
 
   let ty_of_ground g =
     match g with
@@ -99,7 +108,7 @@ end = struct
         let* converted = mapM ty_of_typ args in
         Result.ok (TTyp (c, converted), snd typ)
 
-  let guard cond msg = if cond then Result.ok () else Result.error msg
+  let guard pos cond msg = if cond then Result.ok () else err pos msg
 
   let rec prune env (ty : t) : t =
     match fst ty with
@@ -122,51 +131,46 @@ end = struct
   let rec unify_impl env (a : t) (b : t) =
     let a = prune env a in
     let b = prune env b in
+    let p = range_or (snd a) (snd b) in
     match (fst a, fst b) with
     | TBasic x, TBasic y when x = y -> Result.ok a
     | TTuple lefts, TTuple rights ->
         if List.length lefts <> List.length rights then
-          Result.error "Tuple length mismatch"
+          err p "Tuple length mismatch"
         else
           let zipped = List.combine lefts rights in
           let* checked = mapM (fun (l, r) -> unify_impl env l r) zipped in
-          Result.ok (TTuple checked, snd a)
+          Result.ok (TTuple checked, p)
     | TFun (left_a, left_b), TFun (right_a, right_b) ->
         let* checked_a = unify_impl env left_a right_a in
         let* checked_b = unify_impl env left_b right_b in
-        Result.ok (TFun (checked_a, checked_b), snd a)
-    | TVar a', TVar b when a' = b -> Result.ok (TVar a', snd a)
+        Result.ok (TFun (checked_a, checked_b), p)
+    | TVar a', TVar b when a' = b -> Result.ok (TVar a', p)
     | TVar v, other ->
         let occurs = occurs_check env v b in
         let msg = Fmt.str "%s occurs in %s" v (pp_typ b) in
-        let* () = guard (not occurs) msg in
-        Hashtbl.add env v (other, snd a);
-        Result.ok (other, snd a)
+        let* () = guard p (not occurs) msg in
+        Hashtbl.add env v (other, p);
+        Result.ok (other, p)
     | other, TVar v ->
         let occurs = occurs_check env v a in
         let msg = Fmt.str "%s occurs in %s" v (pp_typ b) in
-        let* () = guard (not occurs) msg in
-        Hashtbl.add env v (other, snd a);
-        Result.ok (other, snd a)
+        let* () = guard p (not occurs) msg in
+        Hashtbl.add env v (other, p);
+        Result.ok (other, p)
     | TTyp (a_name, a_args), TTyp (b_name, b_args) ->
-        let msg =
-          Format.sprintf "Cannot unify %s and %s" (pp_typ a) (pp_typ b)
-        in
-        let* () = guard (a_name = b_name) msg in
+        let msg = Fmt.str "Cannot unify %s and %s" (pp_typ a) (pp_typ b) in
+        let* () = guard p (a_name = b_name) msg in
         let generics_ok = List.length a_args = List.length b_args in
-        let* () = guard generics_ok "Type constructor arity mismatch" in
+        let* () = guard p generics_ok "Type constructor arity mismatch" in
         let zipped = List.combine a_args b_args in
         let* checked = mapM (fun (l, r) -> unify_impl env l r) zipped in
-        Result.ok @@ (TTyp (a_name, checked), snd a)
-    | _ -> failf2 "Cannot unify %s with %s" (pp_typ a) (pp_typ b)
+        Result.ok @@ (TTyp (a_name, checked), p)
+    | _ ->
+        let msg = Fmt.str "Cannot unify %s with %s" (pp_typ a) (pp_typ b) in
+        err p msg
 
-  let unify subst_env (a : t) (b : t) =
-    Fmt.pr "-> Unifying %s and %s" (pp_typ a) (pp_typ b);
-    let* res = unify_impl subst_env a b in
-    Fmt.pr "<- %s" (pp_typ res);
-    Result.ok res
-
-  (* Счетчик для генерации свежих локальных переменных типов *)
+  let unify subst_env (a : t) (b : t) = unify_impl subst_env a b
   let current_id = ref 0
 
   let new_tvar () =
@@ -195,40 +199,44 @@ end = struct
         Result.ok env
     | PatTuple values, TTuple types ->
         let len_ok = List.length values = List.length types in
-        let* () = guard len_ok "Different tuple lengths" in
+        let* () = guard (snd pat) len_ok "Different tuple lengths" in
         let zipped = List.combine values types in
         foldlM
           (fun acc (v, t) -> deconstruct_pattern subst_env v t acc)
           env zipped
-    | PatCtor (name, pat), _ -> (
+    | PatCtor (name, pat'), _ -> (
         match StringMap.find_opt name env with
         | Some (TFun (arg_ty, res_ty), _) ->
             let* _ = unify subst_env res_ty ty in
-            deconstruct_pattern subst_env pat arg_ty env
+            deconstruct_pattern subst_env pat' arg_ty env
         | Some res_ty ->
             let* _ = unify subst_env res_ty ty in
             Result.ok env
-        | None -> failf3 "Cannot find constructor: %s" name)
+        | None -> err (snd pat) @@ Fmt.str "Cannot find constructor: %s" name)
     | PatEmptyList, TTyp (name, _) ->
-        let* () = guard (name = "Список") "Empty list pattern must be list" in
+        let* () =
+          guard (snd pat) (name = "Список") "Empty list pattern must be list"
+        in
         Result.ok env
     | PatListCons (h, t), TTyp (name, [ elem_ty ]) ->
-        let* () = guard (name = "Список") "Empty list pattern must be list" in
+        let* () =
+          guard (snd pat) (name = "Список") "Empty list pattern must be list"
+        in
         let* env = deconstruct_pattern subst_env h elem_ty env in
         deconstruct_pattern subst_env t ty env
     | _ -> failwith "Pattern matching type mismatch"
 
-  let rec infer_expr' subst_env env expr : (t, string) result =
-    match (fst expr) with
+  let rec infer_expr' subst_env env expr : (t, typec_err) result =
+    match fst expr with
     | Const l ->
-      let* lit = infer_literal l in
-      Result.ok (lit, snd expr)
+        let* lit = infer_literal l in
+        Result.ok (lit, snd expr)
     | Value n | Ctor n -> (
         match StringMap.find_opt n env with
-        | Some t -> 
-          let typec, _prev_pos = prune subst_env t in
-          Result.ok (typec, snd expr)
-        | None -> Result.error @@ "Name not found: " ^ n)
+        | Some t ->
+            let typec, _prev_pos = prune subst_env t in
+            Result.ok (typec, snd expr)
+        | None -> err (snd expr) @@ "Name not found: " ^ n)
     | TupleInit vs ->
         let* typs = mapM (infer_expr subst_env env) vs in
         Result.ok (TTuple typs, snd expr)
@@ -240,18 +248,18 @@ end = struct
     | Application (f, a) ->
         let* f_ty = infer_expr subst_env env f in
         let* a_ty = infer_expr subst_env env a in
-        let res_ty = new_tvar (), Unknown in
-        let* _ = unify subst_env f_ty (TFun (a_ty, res_ty), snd expr) in
+        let res_ty = (new_tvar (), snd expr) in
+        let* _ = unify subst_env (TFun (a_ty, res_ty), snd expr) f_ty in
         Result.ok (prune subst_env res_ty)
     | IfThenElse body ->
         let* cond_ty = infer_expr subst_env env body.cond in
-        let* _ = unify subst_env cond_ty (TBasic TBool, Unknown) in
+        let* _ = unify subst_env cond_ty (TBasic TBool, snd body.cond) in
         let* t_ty = infer_expr subst_env env body.thenBranch in
         let* e_ty = infer_expr subst_env env body.elseBranch in
         unify subst_env t_ty e_ty
     | Match (scrutinee, branches) ->
         let* scrutinee_ty = infer_expr subst_env env scrutinee in
-        let res_ty = new_tvar (), Unknown in
+        let res_ty = (new_tvar (), snd expr) in
         let infer_branch branch =
           let* env' =
             deconstruct_pattern subst_env branch.pattern scrutinee_ty env
@@ -262,26 +270,26 @@ end = struct
           in
           let* _ = unify subst_env when_clause_ty (TBasic TBool, Unknown) in
           let* branch_res_ty = infer_expr subst_env env' branch.result in
-          let* _ = unify subst_env res_ty branch_res_ty in
+          let* _ = unify subst_env branch_res_ty res_ty in
           Result.ok res_ty
         in
         let* _ = mapM infer_branch branches in
-        if branches = [] then Result.error "At least one branch is needed"
+        if branches = [] then err (snd expr) "At least one branch is needed"
         else Result.ok (prune subst_env res_ty)
     | LetIn (true, (PatVariable name, p), expr, in_expr) ->
-        let self_ty = new_tvar (), p in
+        let self_ty = (new_tvar (), p) in
         let env = StringMap.add name self_ty env in
         let* expr_ty = infer_expr subst_env env expr in
         let* _ = unify subst_env self_ty expr_ty in
         let* res_ty = infer_expr subst_env env in_expr in
         Result.ok res_ty
-    | LetIn (true, _, _, _) -> Result.error "Bad recursive let"
+    | LetIn (true, _, _, _) -> err (snd expr) "Bad recursive let"
     | LetIn (_, pat, expr, in_expr) ->
         let* expr_ty = infer_expr subst_env env expr in
         let* env = deconstruct_pattern subst_env pat expr_ty env in
         let* res_ty = infer_expr subst_env env in_expr in
         Result.ok res_ty
-    | EmptyList -> Result.ok (TTyp ("Список", [ TVar "_", Unknown ]), snd expr)
+    | EmptyList -> Result.ok (TTyp ("Список", [ (TVar "_", Unknown) ]), snd expr)
     | _ -> failwith "TODO: Infer expr"
 
   and infer_expr a b e =
@@ -303,7 +311,7 @@ end = struct
     let* ty = ty_of_typ typ in
     match fst name with
     | PatVariable _ -> deconstruct_pattern subst_env name ty env
-    | _ -> Result.error "Cannot deconstruct this as a part of a recursive group"
+    | _ -> err Unknown "Cannot deconstruct this as a part of a recursive group"
 
   let infer_decl (env : env) (decl : decl) =
     let subst_env = Hashtbl.create 64 in
@@ -316,29 +324,31 @@ end = struct
         foldlM folder env decls
     | ModuleDecl _ -> failwith "TODO: Module declaration"
     | AdtDecl (name, generics, adt) ->
-        let typ = TTyp (name, List.map (fun (i, p) -> TVar i, p) generics), Unknown in
+        let typ =
+          (TTyp (name, List.map (fun (i, p) -> (TVar i, p)) generics), Unknown)
+        in
         let add_ctor_as_fun env (ctor : adt_ctor_decl) =
           match ctor.typ with
           | None -> StringMap.add ctor.ctor_name typ env |> Result.ok
           | Some t ->
               let* ty = ty_of_typ t in
-              let ty' = TFun (ty, typ), Unknown in
+              let ty' = (TFun (ty, typ), Unknown) in
               Result.ok @@ StringMap.add ctor.ctor_name ty' env
         in
         foldlM add_ctor_as_fun env adt
     | RecordDecl _ -> failwith "TODO: record"
 
   let empty_env =
-    let t_int = TBasic TInt, Unknown in
-    let t_bool = TBasic TBool, Unknown in
-    let t_string = TBasic TString, Unknown in
-    let t_char = TBasic TChar, Unknown in
-    let t_skib = TBasic TUnit, Unknown in
-    let t_list a = TTyp ("Список", [ TVar a, Unknown ]), Unknown in
-    let t_list_ a = TTyp ("Список", [ a ]), Unknown in
-    let tvar x = TVar x, Unknown in
-    let arrow3 a b c = TFun (a, (TFun (b, c), Unknown)), Unknown in
-    let arrow a b = TFun (a, b), Unknown in
+    let t_int = (TBasic TInt, Unknown) in
+    let t_bool = (TBasic TBool, Unknown) in
+    let t_string = (TBasic TString, Unknown) in
+    let t_char = (TBasic TChar, Unknown) in
+    let t_skib = (TBasic TUnit, Unknown) in
+    let t_list a = (TTyp ("Список", [ (TVar a, Unknown) ]), Unknown) in
+    let t_list_ a = (TTyp ("Список", [ a ]), Unknown) in
+    let tvar x = (TVar x, Unknown) in
+    let arrow3 a b c = (TFun (a, (TFun (b, c), Unknown)), Unknown) in
+    let arrow a b = (TFun (a, b), Unknown) in
     let int_binop_ty = arrow3 t_int t_int t_int in
     let compare_ty = arrow3 (tvar "а") (tvar "а") t_bool in
 

@@ -1,5 +1,4 @@
 open Ast.Ast
-open Fmt
 
 module PPAst = struct
   let pp_literal_ (lit : literal) =
@@ -23,7 +22,7 @@ module PPAst = struct
     | PatLiteral l -> pp_literal_ l
     | PatEmptyList -> "[]"
 
-  let rec pp_ground_ (ground : typ_ground) =
+  let pp_ground_ (ground : typ_ground) =
     match ground with
     | TypUnit -> "скиб"
     | TypChar -> "символ"
@@ -65,7 +64,7 @@ module PPAst = struct
     | Lambda lam ->
         Fmt.str "лм %s -> %s" (pp_t_pat_ lam.arg)
           (pp_expr_' (offset ^ "  ") lam.body)
-    | IfThenElse ite -> Fmt.str "ITE TODO"
+    | IfThenElse _ -> Fmt.str "ITE TODO"
     | Application (f, arg) ->
         let f = pp_expr_' offset f in
         let arg = pp_expr_ true offset arg in
