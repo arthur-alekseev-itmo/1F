@@ -24,6 +24,7 @@
   uucp
   containers
   dune
+  fmt
   ppx_deriving
   sedlex)
  (tags

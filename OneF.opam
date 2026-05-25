@@ -16,6 +16,7 @@ depends: [
   "uucp"
   "containers"
   "dune" {>= "3.20"}
+  "fmt"
   "ppx_deriving"
   "sedlex"
   "odoc" {with-doc}

@@ -226,7 +226,7 @@ module Parser = struct
       in
       let* raw_args = wrap parse_args in
       let args = Option.value ~default:[] raw_args in
-      return @@ TypCtor (name, args)
+      return @@ TypCtor (name, List.rev args)
     in
     inner input
 
