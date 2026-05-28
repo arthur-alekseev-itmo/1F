@@ -1,5 +1,7 @@
+(include_subdirs qualified)
+
 (library
+ (name OneF)
  (preprocess
   (pps ppx_deriving.show ppx_deriving.ord sedlex.ppx))
- (libraries uucp containers fmt)
- (name OneF))
+ (libraries uucp containers fmt))

@@ -1,5 +1,5 @@
-open OneF.Lexer
-open OneF.Lexemes
+open OneF.Parsing.Lexer
+open OneF.Parsing.Lexemes
 
 let () =
   let input = In_channel.input_all stdin in

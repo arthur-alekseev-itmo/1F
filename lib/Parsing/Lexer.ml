@@ -16,15 +16,18 @@ module Lexer = struct
       ( '!' | '$' | '%' | '&' | '*' | '+' | '-' | '.' | '/' | ':' | '<' | '='
       | '>' | '?' | '@' | '^' | '|' | '~' | ';' )]
 
+
   let operator_reg = [%sedlex.regexp? Plus op_char]
 
   let float_reg =
     [%sedlex.regexp? Plus digit, '.', Star digit | Star digit, '.', Plus digit]
 
+
   let is_capital s =
     let is_uppercase uchar = Uucp.Gc.general_category uchar = `Lu in
     let uchar = String.get_utf_8_uchar s 0 |> Uchar.utf_decode_uchar in
     is_uppercase uchar
+
 
   let get_id s =
     match s with
@@ -51,11 +54,13 @@ module Lexer = struct
     | s when is_capital s -> BigIdentifier s
     | s -> SmallIdentifier s
 
+
   let unescape_char data =
     let unescaped = Scanf.unescaped data in
     match Sedlexing.Utf8.from_string unescaped |> Sedlexing.next with
     | Some code -> ok @@ CharLiteral code
     | None -> error "Пустой символьный литерал"
+
 
   let rec token buf =
     match%sedlex buf with
@@ -92,16 +97,19 @@ module Lexer = struct
         let char = Sedlexing.Utf8.lexeme buf in
         error ("Непонятный символ: " ^ char)
 
+
   let tokenize_incremental buf = Sedlexing.with_tokenizer token buf
 
   let token_gen_of_string (input : string) =
     let lexbuf = Sedlexing.Utf8.from_string input in
     tokenize_incremental lexbuf
 
+
   let read_file path =
     try In_channel.with_open_text path In_channel.input_all |> Result.ok
     with Sys_error e ->
       Format.sprintf "Error while reading file: %s" e |> Result.error
+
 
   let rec list_of_gen
       (s : unit -> (t * Lexing.position * Lexing.position, string) result) =
@@ -112,13 +120,16 @@ module Lexer = struct
         let* tail = list_of_gen s in
         ok @@ (triple :: tail)
 
+
   let wrap_fn s i =
     let result, x, y = s i in
     match result with Result.Ok z -> ok (z, x, y) | Result.Error e -> error e
 
+
   let lex_string (content : string) =
     let tokens = wrap_fn @@ token_gen_of_string content in
     list_of_gen tokens
+
 
   let lex_file (path : string) =
     let* content = read_file path in

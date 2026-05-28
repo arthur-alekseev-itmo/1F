@@ -1,1 +1,13 @@
-profile=conventional
+profile=default
+break-collection-expressions=wrap
+break-fun-decl=smart
+break-infix=wrap-or-vertical
+break-separators=after
+cases-exp-indent=4
+cases-matching-exp-indent=compact
+dock-collection-brackets=false
+field-space=tight
+if-then-else=compact
+indicate-multiline-delimiters=no
+leading-nested-match-parens
+let-binding-spacing=sparse

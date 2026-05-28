@@ -1,8 +1,10 @@
 open OneF.Interpreter
-open OneF.Parser
-open OneF.ParserErrors
-open OneF.LocalTypec
-open OneF.Lexemes
+open OneF.Parsing.Parser
+open OneF.Parsing.ParserErrors
+open OneF.Semantics.LocalTypec
+open OneF.Backend.SkbClosure
+open OneF.Backend.SkbCompiler
+open OneF.Backend.SkibidIR
 
 let input_file = ref "вход.1ф"
 let output_file = ref None
@@ -10,8 +12,7 @@ let use_stdout = ref false
 let use_stdin = ref false
 
 let speclist =
-  [
-    ("--input", Arg.Set_string input_file, "Input file with .1ф extension");
+  [ ("--input", Arg.Set_string input_file, "Input file with .1ф extension");
     ( "--output",
       Arg.String (fun x -> output_file := Some x),
       "Output file to be dumped to" );
@@ -23,8 +24,8 @@ let speclist =
         (fun x ->
           use_stdin := x;
           input_file := "stdin"),
-      "Use stdin instead of reading a file" );
-  ]
+      "Use stdin instead of reading a file" ) ]
+
 
 let usage_msg = "1ф --input <path> [--output <path>]"
 
@@ -33,25 +34,34 @@ let read_file path =
   with Sys_error e ->
     Format.sprintf "Error while reading file: %s" e |> Result.error
 
+
 let read_string () =
   match !use_stdin with
   | true -> Ok (read_line ())
   | false -> read_file !input_file
 
+
 let main () =
   let ( let* ) = Result.bind in
   Arg.parse speclist ignore usage_msg;
   let* input = read_string () in
+  print_endline "START";
   match Parser.program_of_string input with
-  | Result.Ok program -> (
-      match LocalTypec.infer program with
-      | Result.Ok typec ->
-          let typec = LocalTypec.env_to_list typec in
-          List.iter
-            (fun (k, v) -> Format.printf "%s: %s\n" k (Typec.pp_typ v))
-            typec;
-          Interpreter.interpret program |> ignore |> Result.ok
-      | Result.Error e -> Result.ok @@ ParserErrors.print !input_file input e)
+  | Result.Ok program ->
+    print_endline "PARSE END";
+    (match LocalTypec.infer program with
+    | Result.Ok typec ->
+        let typec = LocalTypec.env_to_list typec in
+        print_endline "TYP END";
+        read_line() |> ignore;
+        List.iter
+          (fun (k, v) -> Format.printf "%s: %s\n" k (Typec.pp_typ v))
+          typec;
+          read_line() |> ignore;
+        let program = SkbClosure.convert_closures program in
+        print_endline "CC END";
+        Interpreter.interpret program |> ignore |> Result.ok
+    | Result.Error e -> Result.ok @@ ParserErrors.print !input_file input e)
   | Result.Error e -> Result.ok @@ ParserErrors.print !input_file input e
 
 let () =

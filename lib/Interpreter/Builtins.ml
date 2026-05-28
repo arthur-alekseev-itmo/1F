@@ -4,6 +4,7 @@ module Builtins = struct
   let binop_base (op : value -> value -> value) : value =
     VBuiltin (fun a -> VBuiltin (fun b -> op a b))
 
+
   let int_binop_base op =
     let inner a b =
       match (a, b) with
@@ -11,6 +12,7 @@ module Builtins = struct
       | _ -> failwith "Cannot apply int operator to non int"
     in
     binop_base inner
+
 
   let bool_binop_base op =
     let inner a b =
@@ -20,6 +22,7 @@ module Builtins = struct
     in
     binop_base inner
 
+
   let bool_not =
     let inner = function
       | VBool s -> VBool (not s)
@@ -27,16 +30,19 @@ module Builtins = struct
     in
     VBuiltin inner
 
+
   let print =
     let inner = function
       | VString s ->
           let () = CCUtf8_string.to_string s |> print_endline in
           VUnit
       | v ->
-          failwith @@ "Cannot print non string: "
+          failwith
+          @@ "Cannot print non string: "
           ^ Runtime.Runtime.value_to_string v
     in
     VBuiltin inner
+
 
   let read =
     let inner = function
@@ -46,12 +52,14 @@ module Builtins = struct
     in
     VBuiltin inner
 
+
   let debug =
     let inner x =
       print_endline @@ Runtime.Runtime.value_to_string x;
       VUnit
     in
     VBuiltin inner
+
 
   let polycompare_base mapping =
     let inner a b =
@@ -65,6 +73,7 @@ module Builtins = struct
     in
     binop_base inner
 
+
   let string_append =
     let inner a b =
       match (a, b) with
@@ -72,6 +81,7 @@ module Builtins = struct
       | _ -> failwith "String concatenation is for strings only"
     in
     binop_base inner
+
 
   let list_concat =
     let inner a b =
@@ -81,6 +91,7 @@ module Builtins = struct
     in
     binop_base inner
 
+
   let list_const =
     let inner a b =
       match (a, b) with
@@ -88,6 +99,7 @@ module Builtins = struct
       | _ -> failwith "Cannot append to non list"
     in
     binop_base inner
+
 
   let explode_string =
     let inner x =
@@ -100,6 +112,7 @@ module Builtins = struct
       | _ -> failwith "Can only explode string"
     in
     VBuiltin inner
+
 
   let implode_string =
     let get_uchars = function
@@ -119,6 +132,7 @@ module Builtins = struct
     in
     VBuiltin inner
 
+
   let int_of_char =
     let inner a =
       match a with
@@ -126,6 +140,7 @@ module Builtins = struct
       | _ -> failwith "int_of_char: awaited char"
     in
     VBuiltin inner
+
 
   let char_of_int =
     let inner a =
@@ -135,13 +150,21 @@ module Builtins = struct
     in
     VBuiltin inner
 
+
   let int_of_string =
+    let convert v =
+      let str = CCUtf8_string.to_string v in
+      match int_of_string_opt str with
+      | None -> Fmt.failwith "not int: %s" str
+      | Some i -> i
+    in
     let inner a =
       match a with
-      | VString v -> VInt (CCUtf8_string.to_string v |> int_of_string)
+      | VString v -> VInt (convert v)
       | _ -> failwith "int_of_string: awaited string"
     in
     VBuiltin inner
+
 
   let string_of_int =
     let inner a =
@@ -150,6 +173,7 @@ module Builtins = struct
       | _ -> failwith "string_of_int: awaited int"
     in
     VBuiltin inner
+
 
   let read_file =
     let inner path =
@@ -162,36 +186,22 @@ module Builtins = struct
     in
     VBuiltin inner
 
+
   let builtin_name_pairs =
-    [
-      ("+", int_binop_base ( + ));
-      ("-", int_binop_base ( - ));
-      ("*", int_binop_base ( * ));
-      ("/", int_binop_base ( / ));
-      ("%", int_binop_base ( mod ));
-      ("^", string_append);
-      ("<", polycompare_base (( = ) (-1)));
-      (">", polycompare_base (( = ) 1));
-      ("=", polycompare_base (( = ) 0));
-      ("<>", polycompare_base (( <> ) 0));
+    [ ("+", int_binop_base ( + )); ("-", int_binop_base ( - ));
+      ("*", int_binop_base ( * )); ("/", int_binop_base ( / ));
+      ("%", int_binop_base ( mod )); ("^", string_append);
+      ("<", polycompare_base (( = ) (-1))); (">", polycompare_base (( = ) 1));
+      ("=", polycompare_base (( = ) 0)); ("<>", polycompare_base (( <> ) 0));
       (">=", polycompare_base (( <> ) (-1)));
-      ("<=", polycompare_base (( <> ) 1));
-      ("&&", bool_binop_base ( && ));
-      ("||", bool_binop_base ( || ));
-      ("не", bool_not);
-      ("::", list_const);
-      ("@", list_concat);
-      ("напечатай", print);
-      ("считай", read);
-      ("дебаг", debug);
-      ("список_из_строки", explode_string);
-      ("строка_из_списка", implode_string);
-      ("число_из_символа", int_of_char);
-      ("символ_из_числа", char_of_int);
-      ("число_из_строки", int_of_string);
-      ("строка_из_числа", string_of_int);
-      ("прочитай_файл", read_file);
-    ]
+      ("<=", polycompare_base (( <> ) 1)); ("&&", bool_binop_base ( && ));
+      ("||", bool_binop_base ( || )); ("не", bool_not); ("::", list_const);
+      ("@", list_concat); ("напечатай", print); ("считай", read);
+      ("дебаг", debug); ("список_из_строки", explode_string);
+      ("строка_из_списка", implode_string); ("число_из_символа", int_of_char);
+      ("символ_из_числа", char_of_int); ("число_из_строки", int_of_string);
+      ("строка_из_числа", string_of_int); ("прочитай_файл", read_file) ]
+
 
   let builtins = builtin_name_pairs |> List.to_seq |> StringMap.of_seq
 end

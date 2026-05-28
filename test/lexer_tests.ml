@@ -1,5 +1,5 @@
-open OneF.Lexer.Lexer
-open OneF.Lexemes.Lexemes
+open OneF.Parsing.Lexer.Lexer
+open OneF.Parsing.Lexemes.Lexemes
 
 let fail_test name message = failwith (Format.sprintf "%s: %s" name message)
 let eq = Operator "="
@@ -13,12 +13,14 @@ let rec collect gen =
   | Ok token ->
       Result.map (fun tail -> (token, start_pos, end_pos) :: tail) (collect gen)
 
+
 let lex input = collect (token_gen_of_string input)
 let tokens_only triples = List.map (fun (token, _, _) -> token) triples
 let show_token = to_string
 
 let show_tokens tokens =
   tokens |> List.map show_token |> String.concat "; " |> Format.sprintf "[%s]"
+
 
 let expect_tokens name expected input =
   match lex input with
@@ -31,6 +33,7 @@ let expect_tokens name expected input =
           (Format.sprintf "expected %s, got %s" (show_tokens expected)
              (show_tokens actual))
 
+
 let expect_error name input =
   match lex input with
   | Error _ -> ()
@@ -39,15 +42,16 @@ let expect_error name input =
         (Format.sprintf "expected lexer error, got %s"
            (show_tokens (tokens_only actual_triples)))
 
+
 let nth_token name index input =
   match lex input with
   | Error message ->
       fail_test name (Format.sprintf "unexpected lexer error: %s" message)
-  | Ok tokens -> (
-      match List.nth_opt tokens index with
-      | Some token -> token
-      | None ->
-          fail_test name (Format.sprintf "missing token at index %d" index))
+  | Ok tokens ->
+    (match List.nth_opt tokens index with
+    | Some token -> token
+    | None -> fail_test name (Format.sprintf "missing token at index %d" index))
+
 
 let expect_position name index ~start_line ~start_char ~end_line ~end_char input
     =
@@ -65,9 +69,11 @@ let expect_position name index ~start_line ~start_char ~end_line ~end_char input
          start_line start_char end_line end_char start_pos.pos_lnum
          start_pos.pos_cnum end_pos.pos_lnum end_pos.pos_cnum)
 
+
 let write_text path content =
   Out_channel.with_open_text path (fun channel ->
       Out_channel.output_string channel content)
+
 
 let read_text path = In_channel.with_open_text path In_channel.input_all
 
@@ -78,6 +84,7 @@ let with_temp_file prefix suffix content f =
     (fun () ->
       write_text path content;
       f path)
+
 
 let expect_file_tokens name expected input =
   with_temp_file "onef-lexer-" ".1f" input (fun path ->
@@ -91,6 +98,7 @@ let expect_file_tokens name expected input =
               (Format.sprintf "expected %s, got %s" (show_tokens expected)
                  (show_tokens actual)))
 
+
 let expect_file_error name input =
   with_temp_file "onef-lexer-error-" ".1f" input (fun path ->
       match lex_file path with
@@ -100,15 +108,16 @@ let expect_file_error name input =
             (Format.sprintf "expected lexer error, got %s"
                (show_tokens (tokens_only actual_triples))))
 
+
 let expect_text_file name expected path =
   let actual = read_text path in
   if actual <> expected then
     fail_test name
       (Format.sprintf "expected file content:\n%s\n\ngot:\n%s" expected actual)
 
+
 let tests =
-  [
-    ( "keywords",
+  [ ( "keywords",
       fun () ->
         expect_tokens "keywords"
           [ Let; Rec; In; If; Then; Else; Lambda ]
@@ -121,13 +130,8 @@ let tests =
     ( "identifiers",
       fun () ->
         expect_tokens "identifiers"
-          [
-            SmallIdentifier "x";
-            SmallIdentifier "x1";
-            SmallIdentifier "_name";
-            SmallIdentifier "привет";
-            SmallIdentifier "имя_2";
-          ]
+          [ SmallIdentifier "x"; SmallIdentifier "x1"; SmallIdentifier "_name";
+            SmallIdentifier "привет"; SmallIdentifier "имя_2" ]
           "x x1 _name привет имя_2" );
     ( "integer literals",
       fun () ->
@@ -137,12 +141,8 @@ let tests =
     ( "float literals",
       fun () ->
         expect_tokens "float literals"
-          [
-            FloatLiteral 0.0;
-            FloatLiteral 3.14;
-            FloatLiteral 1.0;
-            FloatLiteral 0.5;
-          ]
+          [ FloatLiteral 0.0; FloatLiteral 3.14; FloatLiteral 1.0;
+            FloatLiteral 0.5 ]
           "0.0 3.14 1. .5" );
     ( "string literals",
       fun () ->
@@ -152,18 +152,9 @@ let tests =
     ( "operators",
       fun () ->
         expect_tokens "operators"
-          [
-            Operator "+";
-            Operator "-";
-            Operator "*";
-            Operator "/";
-            Operator "==";
-            Operator "<=";
-            Operator ">=";
-            Operator "!=";
-            Operator "&&";
-            Operator "||";
-          ]
+          [ Operator "+"; Operator "-"; Operator "*"; Operator "/";
+            Operator "=="; Operator "<="; Operator ">="; Operator "!=";
+            Operator "&&"; Operator "||" ]
           "+ - * / == <= >= != && ||" );
     ("arrow token", fun () -> expect_tokens "arrow token" [ Arrow ] "->");
     ( "equals is not operator",
@@ -243,15 +234,15 @@ let tests =
                 match lex_file input_path with
                 | Error message ->
                     fail_test "dump writes token coordinates" message
-                | Ok lexemes -> (
-                    match dump_file output_path lexemes with
-                    | Error message ->
-                        fail_test "dump writes token coordinates" message
-                    | Ok () ->
-                        expect_text_file "dump writes token coordinates"
-                          "[line: 1, char: 0-5] пусть\n\
-                           [line: 1, char: 6-7] имя (маленькое) x"
-                          output_path))) );
+                | Ok lexemes ->
+                  (match dump_file output_path lexemes with
+                  | Error message ->
+                      fail_test "dump writes token coordinates" message
+                  | Ok () ->
+                      expect_text_file "dump writes token coordinates"
+                        "[line: 1, char: 0-5] пусть\n\
+                         [line: 1, char: 6-7] имя (маленькое) x"
+                        output_path))) );
     ( "default output path workflow",
       fun () ->
         with_temp_file "onef-default-output-" ".1f" "если да то 1 иначе 0"
@@ -264,20 +255,20 @@ let tests =
                 match lex_file input_path with
                 | Error message ->
                     fail_test "default output path workflow" message
-                | Ok lexemes -> (
-                    match dump_file output_path lexemes with
-                    | Error message ->
-                        fail_test "default output path workflow" message
-                    | Ok () ->
-                        expect_text_file "default output path workflow"
-                          "[line: 1, char: 0-4] если\n\
-                           [line: 1, char: 5-7] да\n\
-                           [line: 1, char: 8-10] то\n\
-                           [line: 1, char: 11-12] целое число 1\n\
-                           [line: 1, char: 13-18] иначе\n\
-                           [line: 1, char: 19-20] целое число 0"
-                          output_path))) );
-  ]
+                | Ok lexemes ->
+                  (match dump_file output_path lexemes with
+                  | Error message ->
+                      fail_test "default output path workflow" message
+                  | Ok () ->
+                      expect_text_file "default output path workflow"
+                        "[line: 1, char: 0-4] если\n\
+                         [line: 1, char: 5-7] да\n\
+                         [line: 1, char: 8-10] то\n\
+                         [line: 1, char: 11-12] целое число 1\n\
+                         [line: 1, char: 13-18] иначе\n\
+                         [line: 1, char: 19-20] целое число 0"
+                        output_path))) ) ]
+
 
 let () =
   List.iter
