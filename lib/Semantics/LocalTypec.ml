@@ -267,6 +267,7 @@ end = struct
   let rec check_less (greater : t) (lesser : t) =
     let env = Hashtbl.create 16 in
     let check_with_env left right =
+      Fmt.pr "Checking types: %s and %s\n" (pp_typ left) (pp_typ right);
       match (fst left, fst right) with
       | TBasic x, TBasic y -> x = y
       | TFun (l1, r1), TFun (l2, r2) -> check_less l1 l2 && check_less r1 r2
@@ -281,6 +282,8 @@ end = struct
       | TFree v1, _ ->
           Hashtbl.replace env v1 right;
           true
+      | TAny, _ -> true
+      | _, TAny -> true
       | TTuple ts1, TTuple ts2 ->
           List.length ts1 = List.length ts2 && List.for_all2 check_less ts1 ts2
       | _ -> false
@@ -293,7 +296,7 @@ end = struct
     let* right = expand_alias_body right in
     let range = range_or (snd left) (snd right) in
     let msg = Fmt.str "Type mismatch: %s and %s" (pp_typ left) (pp_typ right) in
-    guard range (check_less left right) msg
+    guard range (check_less right left) msg
 
 
   let substitute (parameter : t) (arg : t) (res : t) =
@@ -325,8 +328,15 @@ end = struct
             Fmt.str "Conflicting substitutions: %s and %s" (pp_typ sub)
               (pp_typ a)
           in
-          let* () = guard (snd a) is_same msg in
-          Result.ok ()
+          guard (snd a) is_same msg
+      | _, TFree v when Hashtbl.mem env v ->
+          let sub = Hashtbl.find env v in
+          let is_same = check_less p sub in
+          let msg =
+            Fmt.str "Conflicting substitutions': %s and %s" (pp_typ p)
+              (pp_typ sub)
+          in
+          guard (snd p) is_same msg
       | TVar x, TVar y ->
           let type_match = x = y in
           let msg =
@@ -336,6 +346,9 @@ end = struct
       | TFree v, _ ->
           Hashtbl.replace env v a;
           Result.ok ()
+      | _, TFree v ->
+          Hashtbl.replace env v p;
+          Result.ok ()
       | TTuple ps, TTuple as' ->
           let zipped = List.combine ps as' in
           let* _ = mapM (fun (a, b) -> fill_subst a b) zipped in
@@ -343,10 +356,8 @@ end = struct
       | _, TAny -> Result.ok ()
       | TAny, _ -> Result.ok ()
       | _ ->
-          let msg =
-            Fmt.str "Application type error: %s and %s" (pp_typ p) (pp_typ a)
-          in
-          err (snd a) msg
+          Fmt.str "Application type error: %s and %s" (pp_typ p) (pp_typ a)
+          |> err (snd a)
     in
     let* () = fill_subst parameter arg in
     Result.ok @@ apply_subst env res
