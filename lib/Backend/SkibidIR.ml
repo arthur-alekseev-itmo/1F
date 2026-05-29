@@ -1,22 +1,22 @@
 module SkibidIR = struct
   type location = Relocation of string | Exact of int
-  [@@deriving show { with_path= false }]
+  [@@deriving show { with_path = false }]
 
   type skb_constant =
     | ScFloat of float
     | ScString of string
     | ScInt of int (* also bool *)
     | ScFnAddr of int
-  [@@deriving show { with_path= false }]
+  [@@deriving show { with_path = false }]
 
   type skb_int_op = IAdd | IMul | ISub | IDiv | IMod
-  [@@deriving show { with_path= false }]
+  [@@deriving show { with_path = false }]
 
   type skb_float_op = FAdd | FMul | FSub | FDiv
-  [@@deriving show { with_path= false }]
+  [@@deriving show { with_path = false }]
 
   type skb_cmp_op = CEq | CNeq | CLt | CLe | CGt | CGe
-  [@@deriving show { with_path= false }]
+  [@@deriving show { with_path = false }]
 
   (* logic operators do not exist! *)
 
@@ -38,7 +38,7 @@ module SkibidIR = struct
     | Drop
     | Sigbus
     | GetCtorTag
-  [@@deriving show { with_path= false }]
+  [@@deriving show { with_path = false }]
 
-  type skb_program = skb_instr array [@@deriving show { with_path= false }]
+  type skb_program = skb_instr array [@@deriving show { with_path = false }]
 end

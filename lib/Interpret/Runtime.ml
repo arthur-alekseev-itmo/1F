@@ -1,4 +1,5 @@
 open Parsing.Ast
+open Parsing.PPAst
 
 module Runtime = struct
   module StringMap = Map.Make (String)
@@ -17,12 +18,12 @@ module Runtime = struct
     | VRecord of value StringMap.t
     | VBuiltin of (value -> value)
     | VChar of Uchar.t
-    | VLazy of Ast.expr
+    | VLazy of Ast.expr * value StringMap.t
 
-  and variant_data = { tag: string; value: value }
-  and closure_data = { f: Ast.lambda_body; captured: value StringMap.t }
-  and module_data = { name: string; values: value StringMap.t }
-  and stackframe = { parent: stackframe option; locals: value StringMap.t }
+  and variant_data = { tag : string; value : value }
+  and closure_data = { f : Ast.lambda_body; captured : value StringMap.t }
+  and module_data = { name : string; values : value StringMap.t }
+  and stackframe = { parent : stackframe option; locals : value StringMap.t }
 
   let uchar_to_string u =
     let b = Buffer.create 4 in
@@ -68,7 +69,7 @@ module Runtime = struct
         Format.sprintf "{ %s }" fields
     | VBuiltin _ -> "<builtin>"
     | VChar c -> uchar_to_string c
-    | VLazy _ -> "<lazy>"
+    | VLazy (e, _) -> Fmt.str "<lazy %s>" (PPAst.pp_expr e)
     | VModule m -> Format.sprintf "<module %s>" m.name
 
 
@@ -80,7 +81,7 @@ module Runtime = struct
       |> StringMap.to_list
       |> List.filter not_builtin
       |> List.map mapping
-      |> String.concat ", "
+      |> String.concat "\n"
     in
     let parent =
       Option.map stackframe_to_string frame.parent |> Option.value ~default:""

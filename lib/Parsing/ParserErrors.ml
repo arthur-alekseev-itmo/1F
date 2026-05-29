@@ -3,7 +3,7 @@ open Ast
 
 module ParserErrors = struct
   type range = Ast.range
-  type t = { position: Ast.range; message: string }
+  type t = { position : Ast.range; message : string }
 
   let fmt_json_range (range : Ast.pos * Ast.pos) =
     let p_start, p_end = range in
@@ -45,17 +45,17 @@ module ParserErrors = struct
       (filename : string) (file : string) (message : string) (position : range)
       =
     let eof_pos =
-      { pos_fname= filename;
-        pos_lnum= String.split_on_char '\n' file |> List.length |> ( + ) (-1);
-        pos_bol= 0;
-        pos_cnum= CCUtf8_string.of_string_exn file |> CCUtf8_string.n_chars
+      { pos_fname = filename;
+        pos_lnum = String.split_on_char '\n' file |> List.length |> ( + ) (-1);
+        pos_bol = 0;
+        pos_cnum = CCUtf8_string.of_string_exn file |> CCUtf8_string.n_chars
       }
     in
     match position with
     | Known (ps, pe) -> fmt_pos filename file message (ps, pe)
     | Eof ->
         fmt_pos filename file message
-          (eof_pos, { eof_pos with pos_cnum= eof_pos.pos_cnum + 1 })
+          (eof_pos, { eof_pos with pos_cnum = eof_pos.pos_cnum + 1 })
     | Unknown -> message ^ " (position unknown)"
 
 

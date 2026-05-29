@@ -39,7 +39,7 @@ module SkbClosure = struct
 
   let get_ty_pattern_vars pat = get_pattern_vars @@ fst pat
 
-  type cc_decl_data = { pat: pattern; args: typed_pattern list; expr: expr }
+  type cc_decl_data = { pat : pattern; args : typed_pattern list; expr : expr }
   type cc_decl = CCLet of cc_decl_data | CCLetGroup of cc_decl_data list
 
   let rec pp_cc_decl = function
@@ -87,6 +87,7 @@ module SkbClosure = struct
         let brs = List.map free_vars_br brs in
         StringSet.union e @@ union_all brs
     | EmptyList -> StringSet.empty
+
 
   and free_vars_br br =
     let e = free_vars br.result in
@@ -139,12 +140,12 @@ module SkbClosure = struct
         in
         let args = env_args @ lambda_args in
         let expr, inners = cc_expr' lambda_body in
-        let cc_decl = { pat= (PatVariable name, snd expr); args; expr } in
+        let cc_decl = { pat = (PatVariable name, snd expr); args; expr } in
         let apply acc arg =
           (Application (acc, (Value arg, Unknown)), Unknown)
         in
         let applied_expr =
-          List.fold_left apply (Value name, Unknown) (List.rev captured_values)
+          List.fold_left apply (Value name, Unknown) captured_values
         in
         (applied_expr, cc_decl :: inners)
     | IfThenElse ite ->
@@ -170,7 +171,7 @@ module SkbClosure = struct
             |> Option.value ~default:(None, [])
           in
           let result, add2 = cc_expr' br.result in
-          ({ pattern= br.pattern; when_clause; result }, add1 @ add2)
+          ({ pattern = br.pattern; when_clause; result }, add1 @ add2)
         in
         let mapped = List.map cc_branch brs in
         let brs = List.map fst mapped in
@@ -178,27 +179,30 @@ module SkbClosure = struct
         ((Match (scr, brs), snd expr), add1 @ adds)
     | EmptyList -> (expr, [])
 
+
   let globals = ref global_names
 
   let cc_let (decl : let_decl) =
     let body, args = fold_lambdas decl.body in
     let body, additional = cc_expr !globals body in
-    let cc_decl = { pat= decl.name; args; expr= body } in
+    let cc_decl = { pat = decl.name; args; expr = body } in
     additional @ [ cc_decl ]
 
-  let add_pattern_to_globals (pattern: pattern) =
+
+  let add_pattern_to_globals (pattern : pattern) =
     let bound = get_pattern_vars pattern in
     globals := !globals |> StringSet.union bound
+
 
   let cc_decl (decl : decl) =
     match decl with
     | LetDeclRecursiveGroup decls ->
-      let names = List.map (fun x -> x.name) decls in
-      List.iter add_pattern_to_globals names;
+        let names = List.map (fun x -> x.name) decls in
+        List.iter add_pattern_to_globals names;
         [ CCLetGroup (List.concat_map cc_let decls) ]
     | LetDecl decl ->
-      add_pattern_to_globals decl.name;
-      [ CCLetGroup (cc_let decl) ]
+        add_pattern_to_globals decl.name;
+        [ CCLetGroup (cc_let decl) ]
     | ModuleDecl _ -> failwith "TODO: CC Module"
     | _ -> []
 
@@ -207,4 +211,9 @@ module SkbClosure = struct
     let res = List.concat_map cc_decl program in
     List.iter (fun s -> print_endline @@ pp_cc_decl s) res;
     res
+
+
+  let convert_closures_in_expr (expr : expr) =
+    let e, decls = cc_expr !globals expr in
+    (e, [ CCLetGroup decls ])
 end

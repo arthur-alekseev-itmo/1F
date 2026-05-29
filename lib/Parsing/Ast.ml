@@ -41,8 +41,8 @@ module Ast = struct
 
   type typed_pattern = pattern * typ
 
-  type ite_body = { cond: expr; thenBranch: expr; elseBranch: expr }
-  and lambda_body = { arg: typed_pattern; body: expr }
+  type ite_body = { cond : expr; thenBranch : expr; elseBranch : expr }
+  and lambda_body = { arg : typed_pattern; body : expr }
 
   and expr_content =
     | TupleInit of expr list
@@ -62,17 +62,17 @@ module Ast = struct
   and expr = expr_content * range
 
   and match_pattern_branch =
-    { pattern: pattern; when_clause: expr option; result: expr }
+    { pattern : pattern; when_clause : expr option; result : expr }
 
-  type let_decl = { name: pattern; body: expr; typ: typ }
-  type adt_ctor_decl = { ctor_name: string; typ: typ option }
-  type rcd_field_decl = { field_name: string; typ: typ }
+  type let_decl = { name : pattern; body : expr; typ : typ }
+  type adt_ctor_decl = { ctor_name : string; typ : typ option }
+  type rcd_field_decl = { field_name : string; typ : typ }
   type generic_var = string * range
 
   type decl =
     | LetDeclRecursiveGroup of let_decl list
     | LetDecl of let_decl
-    | ModuleDecl of { name: string; decls: decl list }
+    | ModuleDecl of { name : string; decls : decl list }
     | AliasDecl of string * generic_var list * typ
     | AdtDecl of string * generic_var list * adt_ctor_decl list
     | RecordDecl of string * generic_var list * rcd_field_decl list

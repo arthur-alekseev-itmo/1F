@@ -1,3 +1,4 @@
+open Runtime.Runtime
 open Parsing.Ast
 open Parsing.PPAst
 open Runtime.Runtime
@@ -8,7 +9,7 @@ module Interpreter = struct
   let ( >>= ) = Result.bind
 
   let write_local name value ctx =
-    { ctx with locals= StringMap.add name value ctx.locals }
+    { ctx with locals = StringMap.add name value ctx.locals }
 
 
   let value_to_string = value_to_string
@@ -31,14 +32,14 @@ module Interpreter = struct
 
 
   let rec all_but_root ctx =
-    let merge _ a b = Some a in
+    let merge _ a _ = Some a in
     match (ctx.parent, ctx.parent |> Option.map (fun x -> x.parent)) with
     | _, None -> StringMap.empty
     | Some p, _ -> StringMap.union merge ctx.locals (all_but_root p)
     | _ -> StringMap.empty
 
 
-  let initial_stack = { parent= None; locals= Builtins.builtins }
+  let initial_stack = { parent = None; locals = Builtins.builtins }
 
   let eval_literal (e : Ast.literal) =
     match e with
@@ -88,12 +89,16 @@ module Interpreter = struct
 
 
   let step_counter = ref 0
+  let logging_offset = ref ""
+
   let step_num () =
     step_counter := !step_counter + 1;
     !step_counter
 
-  let rec eval_expr (e : Ast.expr) ctx =
-    Fmt.pr "   %d %s\n" (step_num ()) (PPAst.pp_expr e);
+
+  let rec eval_expr' (e : Ast.expr) ctx =
+    (* Fmt.pr "   %s" (stackframe_to_string ctx);
+    read_line () |> ignore; *)
     match fst e with
     | Const lit -> eval_literal lit
     | Application (callee, arg) ->
@@ -102,7 +107,7 @@ module Interpreter = struct
         eval_application callee' arg' ctx
     | Value name -> search_in_ctx name ctx
     | LetIn (true, (PatVariable name, p), expr, body) ->
-        let lazy_value = VLazy expr in
+        let lazy_value = VLazy (expr, all_but_root ctx) in
         let ctx' = set_pattern_to_ctx (PatVariable name, p) lazy_value ctx in
         let expr' = eval_expr expr ctx' in
         let ctx'' = set_pattern_to_ctx (PatVariable name, p) expr' ctx' in
@@ -113,13 +118,13 @@ module Interpreter = struct
           let expr' = eval_expr expr ctx in
           let ctx' = set_pattern_to_ctx pat expr' ctx in
           eval_expr body ctx'
-    | Lambda lam -> VClosure { f = lam; captured = ctx.locals } 
+    | Lambda lam -> VClosure { f = lam; captured = all_but_root ctx }
     | IfThenElse ite -> eval_ite ite ctx
     | TupleInit xs ->
         let xs' = List.map (fun e -> eval_expr e ctx) xs in
         VTuple xs'
     | Ctor c when has_module c ctx -> search_in_ctx c ctx
-    | Ctor c -> VVariant { tag= c; value= VUnit }
+    | Ctor c -> VVariant { tag = c; value = VUnit }
     | FieldAccess (target, field) ->
         let target' = eval_expr target ctx in
         eval_field_access target' field ctx
@@ -138,13 +143,21 @@ module Interpreter = struct
     | EmptyList -> VList []
 
 
+  and eval_expr e ctx =
+    let prev = !logging_offset in
+    Fmt.pr "   %s-> %s\n" !logging_offset (PPAst.pp_expr e);
+    logging_offset := !logging_offset ^ "| ";
+    let res = eval_expr' e ctx in
+    logging_offset := prev;
+    Fmt.pr "   %s<- %s\n" !logging_offset (value_to_string res);
+    res
+
+
   and update_record (v : value) (updates : (string * value) list) _ctx =
     match v with
     | VRecord r ->
-        let r' =
-          List.fold_left (fun m (k, v) -> StringMap.add k v m) r updates
-        in
-        VRecord r'
+        List.fold_left (fun m (k, v) -> StringMap.add k v m) r updates
+        |> fun x -> VRecord x
     | e ->
         let msg = Fmt.str "Cannot update non-record: %s" (value_to_string e) in
         failwith msg
@@ -194,25 +207,43 @@ module Interpreter = struct
         Fmt.failwith "Can only lookup value in record or module. Got: %s" v
 
 
-  and unlazy v ctx = match v with VLazy x -> eval_expr x ctx | e -> e
+  and unlazy v ctx =
+    let merge _ _ a = Some a in
+    match v with
+    | VLazy (x, cap) ->
+        eval_expr x { ctx with locals = StringMap.union merge ctx.locals cap }
+    | e -> e
+
 
   and eval_application (callee : value) (arg : value) ctx =
     match unlazy callee ctx with
     | VBuiltin b -> b arg
     | VClosure closure ->
-        let cap' = set_pattern_force (fst closure.f.arg) arg closure.captured in
-        let ctx' = { parent = Some ctx; locals = cap' } in
-        eval_expr closure.f.body ctx'
+      (match fst closure.f.body with
+      | Lambda lam ->
+          let cap =
+            set_pattern_force (fst closure.f.arg) arg closure.captured
+          in
+          VClosure { f = lam; captured = cap }
+      | _ ->
+          let merger _ _ b = Some b in
+          let locals' = StringMap.union merger ctx.locals closure.captured in
+          let ctx' = { ctx with locals = locals' } in
+          let ctx'' = set_pattern_to_ctx (fst closure.f.arg) arg ctx' in
+          eval_expr closure.f.body ctx'')
     | VVariant v when v.value = VUnit -> VVariant { v with value = arg }
-    | e -> failwith @@ "Cannot apply non-function: " ^ value_to_string e
+    | e ->
+        Fmt.pr "%s to %s" (value_to_string e) (value_to_string arg);
+        Fmt.failwith "Cannot apply non-function: %s" (value_to_string e)
+
 
   let interpret_decl ctx (d : cc_decl) =
-    let fun_wrapping acc arg = (Ast.Lambda { arg; body= acc }, Ast.Unknown) in
+    let fun_wrapping acc arg = (Ast.Lambda { arg; body = acc }, Ast.Unknown) in
     match d with
     | CCLetGroup decls ->
         let add_decl_to_ctx ctx (d : cc_decl_data) =
           let v = List.fold_left fun_wrapping d.expr (List.rev d.args) in
-          let lazy_value = VLazy v in
+          let lazy_value = VLazy (v, StringMap.empty) in
           set_pattern_to_ctx d.pat lazy_value ctx
         in
         let eval_decl ctx (d : cc_decl_data) =

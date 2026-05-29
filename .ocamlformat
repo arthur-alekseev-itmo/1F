@@ -6,7 +6,6 @@ break-separators=after
 cases-exp-indent=4
 cases-matching-exp-indent=compact
 dock-collection-brackets=false
-field-space=tight
 if-then-else=compact
 indicate-multiline-delimiters=no
 leading-nested-match-parens

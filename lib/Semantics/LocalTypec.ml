@@ -60,6 +60,8 @@ module LocalTypec : sig
   type typec_result = (env, typec_err) result
 
   val infer : program -> typec_result
+  val infer_decl : env -> decl -> typec_result
+  val infer_expr : env -> expr -> (Typec.t, typec_err) result
   val env_to_list : env -> (string * Typec.t) list
 end = struct
   open Typec
@@ -97,7 +99,12 @@ end = struct
   let logging_offset = ref ""
 
   let range_or p1 p2 =
-    match p1 with Unknown -> p2 | Eof when p2 <> Unknown -> p2 | _ -> p1
+    match (p1, p2) with
+    | Known (p1s, _), Known (p2s, _) when p1s.pos_lnum > p2s.pos_lnum -> p1
+    | Known _, Known _ -> p2
+    | Unknown, p2 -> p2
+    | Eof, p2 when p2 <> Unknown -> p2
+    | _ -> p1
 
 
   let err position message =
@@ -128,6 +135,13 @@ end = struct
     | TypString -> TBasic TString
     | TypBool -> TBasic TBool
     | TypUnit -> TBasic TUnit
+
+
+  let current_id = ref 0
+
+  let _new_tvar () =
+    incr current_id;
+    TFree ("a" ^ string_of_int !current_id)
 
 
   let rec ty_of_typ typ =
@@ -190,13 +204,32 @@ end = struct
 
   let rec rigidify (ty : t) : t =
     match fst ty with
-    | TBasic t -> ty
+    | TBasic _ -> ty
     | TFun (l, r) -> (TFun (rigidify l, rigidify r), snd ty)
     | TTyp (name, args) -> (TTyp (name, List.map rigidify args), snd ty)
-    | TVar v -> ty
+    | TVar _ -> ty
     | TFree v -> (TVar v, snd ty)
     | TAny -> ty
     | TTuple args -> (TTuple (List.map rigidify args), snd ty)
+
+
+  let skibidify (ty : t) : t =
+    let env = Hashtbl.create 64 in
+    let rec skibidify_inner (ty : t) : t =
+      match fst ty with
+      | TBasic _ -> ty
+      | TFun (l, r) -> (TFun (skibidify_inner l, skibidify_inner r), snd ty)
+      | TTyp (name, args) -> (TTyp (name, List.map skibidify_inner args), snd ty)
+      | TVar _ -> ty
+      | TFree v when Hashtbl.mem env v -> (Hashtbl.find env v, snd ty)
+      | TFree v ->
+          let fresh = _new_tvar () in
+          Hashtbl.add env v fresh;
+          (fresh, snd ty)
+      | TAny -> ty
+      | TTuple args -> (TTuple (List.map rigidify args), snd ty)
+    in
+    skibidify_inner ty
 
 
   let rec most_specific' (left : t) (right : t) =
@@ -257,9 +290,9 @@ end = struct
 
 
   let most_specific a b =
-    Fmt.pr "Finding most specific of %s %s\n" (pp_typ a) (pp_typ b);
+    (* Fmt.epr "Finding most specific of %s %s\n" (pp_typ a) (pp_typ b); *)
     let* res = most_specific' a b in
-    Fmt.pr "It is %s\n" (pp_typ res);
+    (* Fmt.epr "It is %s\n" (pp_typ res); *)
     Result.ok res
 
 
@@ -267,7 +300,7 @@ end = struct
   let rec check_less (greater : t) (lesser : t) =
     let env = Hashtbl.create 16 in
     let check_with_env left right =
-      Fmt.pr "Checking types: %s and %s\n" (pp_typ left) (pp_typ right);
+      (* Fmt.epr "Checking types: %s and %s\n" (pp_typ left) (pp_typ right); *)
       match (fst left, fst right) with
       | TBasic x, TBasic y -> x = y
       | TFun (l1, r1), TFun (l2, r2) -> check_less l1 l2 && check_less r1 r2
@@ -294,7 +327,7 @@ end = struct
   let guard_less (left : t) (right : t) =
     let* left = expand_alias_body left in
     let* right = expand_alias_body right in
-    let range = range_or (snd left) (snd right) in
+    let range = range_or (snd right) (snd left) in
     let msg = Fmt.str "Type mismatch: %s and %s" (pp_typ left) (pp_typ right) in
     guard range (check_less right left) msg
 
@@ -363,13 +396,6 @@ end = struct
     Result.ok @@ apply_subst env res
 
 
-  let current_id = ref 0
-
-  let _new_tvar () =
-    incr current_id;
-    TFree ("a" ^ string_of_int !current_id)
-
-
   let infer_literal l =
     let ret x = Result.ok (TBasic x) in
     match l with
@@ -386,7 +412,7 @@ end = struct
     match (fst pat, fst ty) with
     | PatWildcard, _ -> Result.ok env
     | PatVariable name, _ ->
-        Fmt.pr "Added value: %s = %s\n" name (pp_typ ty);
+        (* Fmt.epr "Added value: %s = %s\n" name (pp_typ ty); *)
         let env = StringMap.remove name env in
         Result.ok @@ StringMap.add name (TorArg ty) env
     | PatUnit, TBasic TUnit -> Result.ok env
@@ -436,7 +462,7 @@ end = struct
     | Value n | Ctor n ->
       (* env_to_list env |> List.iter (fun (k, v) -> Fmt.pr "%s(env) %s: %s\n" !logging_offset k (pp_typ v)); *)
       (match StringMap.find_opt n env |> Option.map get_ty with
-      | Some t -> Result.ok t
+      | Some t -> Result.ok @@ skibidify t
       | None -> err (snd expr) @@ "Name not found: " ^ n)
     | TupleInit vs ->
         let* typs = mapM (infer_expr env) vs in
@@ -500,13 +526,13 @@ end = struct
 
 
   and infer_expr b e =
-    Fmt.pr "%s-> Inferring %s\n" !logging_offset (PPAst.pp_expr e);
+    (* Fmt.epr "%s-> Inferring %s\n" !logging_offset (PPAst.pp_expr e); *)
     let prev_offset = !logging_offset in
     logging_offset := !logging_offset ^ "  ";
     let* ty = infer_expr' b e in
     let* ty = expand_alias_body ty in
     logging_offset := prev_offset;
-    Fmt.pr "%s<- %s\n" !logging_offset (pp_typ ty);
+    (* Fmt.epr "%s<- %s\n" !logging_offset (pp_typ ty); *)
     Result.ok ty
 
 
@@ -525,7 +551,6 @@ end = struct
 
 
   let infer_decl (env : env) (decl : decl) =
-    read_line () |> ignore;
     match decl with
     | LetDecl d -> infer_let_decl d.name d.body d.typ env
     | LetDeclRecursiveGroup decls ->

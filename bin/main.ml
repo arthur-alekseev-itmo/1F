@@ -1,4 +1,5 @@
-open OneF.Interpreter
+open OneF.Interpret.Interpreter
+open OneF.Interpret.REPL
 open OneF.Parsing.Parser
 open OneF.Parsing.ParserErrors
 open OneF.Semantics.LocalTypec
@@ -48,21 +49,21 @@ let main () =
   print_endline "START";
   match Parser.program_of_string input with
   | Result.Ok program ->
-    print_endline "PARSE END";
-    (match LocalTypec.infer program with
-    | Result.Ok typec ->
-        let typec = LocalTypec.env_to_list typec in
-        print_endline "TYP END";
-        read_line() |> ignore;
-        List.iter
-          (fun (k, v) -> Format.printf "%s: %s\n" k (Typec.pp_typ v))
-          typec;
-          read_line() |> ignore;
-        let program = SkbClosure.convert_closures program in
-        print_endline "CC END";
-        Interpreter.interpret program |> ignore |> Result.ok
-    | Result.Error e -> Result.ok @@ ParserErrors.print !input_file input e)
+      print_endline "PARSE END";
+      (match LocalTypec.infer program with
+      | Result.Ok typec ->
+          let ty_list = LocalTypec.env_to_list typec in
+          print_endline "TYP END";
+          List.iter
+            (fun (k, v) -> Format.printf "%s: %s\n" k (Typec.pp_typ v))
+            ty_list;
+          let program = SkbClosure.convert_closures program in
+          print_endline "CC END";
+          let state = Interpreter.interpret program in
+          REPL.start_loop input typec state
+      | Result.Error e -> Result.ok @@ ParserErrors.print !input_file input e)
   | Result.Error e -> Result.ok @@ ParserErrors.print !input_file input e
+
 
 let () =
   match main () with

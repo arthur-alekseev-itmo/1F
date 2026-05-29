@@ -26,6 +26,7 @@
   dune
   fmt
   ppx_deriving
+  linenoise
   sedlex)
  (tags
   (skibidi importozameshenie fp ocaml)))

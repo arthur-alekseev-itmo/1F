@@ -354,13 +354,14 @@ module Parser = struct
           let p = List.map snd xs |> List.fold_left mrg Unknown in
           return @@ (PatTuple xs, p)
     in
-    
+
     match input with
     | (IntLiteral _, _, _) :: _
     | (StringLiteral _, _, _) :: _
     | (FloatLiteral _, _, _) :: _
     | (BoolLiteral _, _, _) :: _
-    | (CharLiteral _, _, _) :: _ -> pat_literal input
+    | (CharLiteral _, _, _) :: _ ->
+        pat_literal input
     | (LBr, _, _) :: _ -> pat_empty_list input
     | (Wildcard, _, _) :: _ -> pat_wild input
     | (BigIdentifier _, _, _) :: _ -> ctor_pattern input
@@ -426,7 +427,7 @@ module Parser = struct
     inner input
 
 
-  and parse_record_init input: expr parse_result =
+  and parse_record_init input : expr parse_result =
     let inner =
       let semi = token Semicolon in
       let content = sep_by ~inner_parser:field_assignment ~sep_parser:semi in
@@ -474,7 +475,7 @@ module Parser = struct
     | (LCbr, _, _) :: _ -> (parse_record_init <|> parse_record_update) input
     | (LBr, _, _) :: _ -> parse_list_construction input
     | (LPar, _, _) :: _ -> (parse_tuple <|> parse_operator_value) input
-    | (Lambda, _, _) :: _ -> parse_lambda  input
+    | (Lambda, _, _) :: _ -> parse_lambda input
     | (Match, _, _) :: _ -> parse_match input
     | (If, _, _) :: _ -> parse_ite input
     | (Let, _, _) :: _ -> parse_let input
@@ -501,7 +502,7 @@ module Parser = struct
       let* body = must_pos ip parse_expr "Awaited expr after 'в'" in
       let fun_expr =
         List.fold_left
-          (fun (body, b_p) arg -> (Lambda { arg; body= (body, b_p) }, b_p))
+          (fun (body, b_p) arg -> (Lambda { arg; body = (body, b_p) }, b_p))
           value (List.rev args)
       in
       let p = mrg lp (snd body) in
@@ -544,7 +545,7 @@ module Parser = struct
       let* body = must_pos ap parse_expr "Awaited expr in lambda body" in
       return
       @@ List.fold_left
-           (fun (body, p) arg -> (Lambda { body= (body, p); arg }, p))
+           (fun (body, p) arg -> (Lambda { body = (body, p); arg }, p))
            body (List.rev args)
     in
     inner input
@@ -589,7 +590,7 @@ module Parser = struct
       let field_decl =
         let* id, _ = parse_id in
         let* typ = must_token Colon *> parse_ty in
-        return { field_name= id; typ }
+        return { field_name = id; typ }
       in
       let comma = token Comma in
       let* data =
@@ -609,7 +610,7 @@ module Parser = struct
       let variant_decl =
         let* id, _ = parse_big_id in
         let* typ = wrap (token Of *> parse_ty) in
-        return { ctor_name= id; typ }
+        return { ctor_name = id; typ }
       in
       let msg = "Awaited variant declaration" in
       let* first_variant = (wrap @@ token VBar) *> must variant_decl msg in
@@ -696,7 +697,20 @@ module Parser = struct
 
 
   let error_on msg position =
-    Result.error ({ message= msg; position } : ParserErrors.t)
+    Result.error ({ message = msg; position } : ParserErrors.t)
+
+
+  (* TODO: Remove code duplication *)
+  let epxr_of_string s : (expr, ParserErrors.t) result =
+    match Lexer.Lexer.lex_string s with
+    | Result.Error msg -> error_on msg Unknown
+    | Result.Ok e ->
+      (match parse_expr e with
+      | Parsed (e, []) -> Result.ok e
+      | Parsed (_, (_, ps, pe) :: _) ->
+          error_on "Unparsed tail :sob:" (Known (ps, pe))
+      | Failed (msg, p) -> error_on msg p
+      | HardFailed (msg, p) -> error_on msg p)
 
 
   let program_of_string s : (program, ParserErrors.t) result =
