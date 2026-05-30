@@ -107,6 +107,55 @@ module SkbClosure = struct
     | _ -> (expr, [])
 
 
+  let rec rename_var old_name new_name (expr : expr) =
+    let rename_var' = rename_var old_name new_name in
+    match fst expr with
+    | TupleInit vs -> (TupleInit (List.map rename_var' vs), snd expr)
+    | Const _ -> expr
+    | Value v when v = old_name -> (Value new_name, snd expr)
+    | Value _ -> expr
+    | LetIn (r, pat, oexpr, in_expr) ->
+        let variables = get_pattern_vars pat in
+        let should_rename_expr = r && not (StringSet.mem old_name variables) in
+        let oexpr = if should_rename_expr then rename_var' oexpr else oexpr in
+        let should_rename_inexpr = not (StringSet.mem old_name variables) in
+        let in_expr =
+          if should_rename_inexpr then rename_var' in_expr else in_expr
+        in
+        (LetIn (r, pat, oexpr, in_expr), snd expr)
+    | Lambda lam ->
+        let should_rename =
+          get_pattern_vars (fst lam.arg) |> StringSet.mem old_name |> not
+        in
+        let body = if should_rename then rename_var' lam.body else lam.body in
+        (Lambda { lam with body }, snd expr)
+    | IfThenElse ite ->
+        let cond = ite.cond |> rename_var' in
+        let thenBranch = ite.thenBranch |> rename_var' in
+        let elseBranch = ite.elseBranch |> rename_var' in
+        (IfThenElse { cond; thenBranch; elseBranch }, snd expr)
+    | Application (l, r) ->
+        (Application (rename_var' l, rename_var' r), snd expr)
+    | Ctor _ -> expr
+    | RecordInit _ -> failwith "TODO"
+    | RecordUpdate _ -> failwith "TODO"
+    | FieldAccess _ -> failwith "TODO"
+    | Match (scr, brs) ->
+        let rename_in_branch (br : match_pattern_branch) =
+          let should =
+            br.pattern |> get_pattern_vars |> StringSet.mem old_name |> not
+          in
+          let when_clause =
+            if should then (Option.map rename_var') br.when_clause
+            else br.when_clause
+          in
+          let result = if should then rename_var' br.result else br.result in
+          { br with result; when_clause }
+        in
+        (Match (rename_var' scr, List.map rename_in_branch brs), snd expr)
+    | EmptyList -> expr
+
+
   let rec cc_expr (globals : StringSet.t) (expr : expr) :
       expr * cc_decl_data list =
     let cc_expr' = cc_expr globals in
@@ -119,35 +168,24 @@ module SkbClosure = struct
         (e, additional)
     | Const _ -> (expr, [])
     | Value _ -> (expr, [])
+    | LetIn (r, (PatVariable orig_name, pos1), (Lambda lam, pos2), in_expr) ->
+        let name = fresh_name orig_name in
+        let globals_with_self = StringSet.add name globals in
+        let bnd_expr =
+          Lambda { lam with body = rename_var orig_name name lam.body }
+        in
+        let self, add1 = cc_lambdas globals_with_self (bnd_expr, pos2) name in
+        let in_expr, add2 = cc_expr' in_expr in
+        let e = LetIn (false, (PatVariable orig_name, pos1), self, in_expr) in
+        ((e, snd expr), add1 @ add2)
     | LetIn (r, pat, expr, in_expr) ->
         let expr, add1 = cc_expr' expr in
         let in_expr, add2 = cc_expr' in_expr in
         let e = LetIn (r, pat, expr, in_expr) in
         ((e, snd expr), add1 @ add2)
     | Lambda _ ->
-        let lambda_body, lambda_args = fold_lambdas expr in
-        let lambda_arg_names = List.map get_ty_pattern_vars lambda_args in
-        let captured_values =
-          free_vars lambda_body
-          |> diff_with globals
-          |> diff_with (union_all lambda_arg_names)
-          |> StringSet.to_list
-        in
         let name = fresh_name "lam" in
-        let unk_ty = (TypVar "?", Unknown) in
-        let env_args =
-          List.map (fun v -> ((PatVariable v, Unknown), unk_ty)) captured_values
-        in
-        let args = env_args @ lambda_args in
-        let expr, inners = cc_expr' lambda_body in
-        let cc_decl = { pat = (PatVariable name, snd expr); args; expr } in
-        let apply acc arg =
-          (Application (acc, (Value arg, Unknown)), Unknown)
-        in
-        let applied_expr =
-          List.fold_left apply (Value name, Unknown) captured_values
-        in
-        (applied_expr, cc_decl :: inners)
+        cc_lambdas globals expr name
     | IfThenElse ite ->
         let cond, add1 = cc_expr' ite.cond in
         let thenBranch, add2 = cc_expr' ite.thenBranch in
@@ -178,6 +216,30 @@ module SkbClosure = struct
         let adds = List.concat_map snd mapped in
         ((Match (scr, brs), snd expr), add1 @ adds)
     | EmptyList -> (expr, [])
+
+
+  and cc_lambdas (globals : StringSet.t) lams name =
+    let cc_expr' = cc_expr globals in
+    let lambda_body, lambda_args = fold_lambdas lams in
+    let expr, inners = cc_expr' lambda_body in
+    let lambda_arg_names = List.map get_ty_pattern_vars lambda_args in
+    let captured_values =
+      free_vars expr
+      |> diff_with globals
+      |> diff_with (union_all lambda_arg_names)
+      |> StringSet.to_list
+    in
+    let unk_ty = (TypVar "?", Unknown) in
+    let env_args =
+      List.map (fun v -> ((PatVariable v, Unknown), unk_ty)) captured_values
+    in
+    let args = env_args @ lambda_args in
+    let cc_decl = { pat = (PatVariable name, snd expr); args; expr } in
+    let apply acc arg = (Application (acc, (Value arg, Unknown)), Unknown) in
+    let applied_expr =
+      List.fold_left apply (Value name, Unknown) captured_values
+    in
+    (applied_expr, cc_decl :: inners)
 
 
   let globals = ref global_names

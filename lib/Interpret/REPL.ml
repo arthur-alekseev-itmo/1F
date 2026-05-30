@@ -20,14 +20,12 @@ module REPL = struct
     let* parsed = Parser.epxr_of_string command in
     (* let e = { position = Unknown; message = "Awaited single expr" } in *)
     let* typ = LocalTypec.infer_expr state.types parsed in
-    let expr, cc_decls = SkbClosure.convert_closures_in_expr parsed in
+    (* let expr, cc_decls = SkbClosure.convert_closures_in_expr parsed in
     List.iter (fun x -> SkbClosure.pp_cc_decl x |> Fmt.pr "%s\n") cc_decls;
-    PPAst.pp_expr expr |> Fmt.pr "%s\n";
+    PPAst.pp_expr expr |> Fmt.pr "%s\n"; *)
     let frame = state.frame in
-    let frame = List.fold_left interpret_decl frame cc_decls in
-    let value = eval_expr expr frame in
+    let value = eval_expr parsed frame in
     Fmt.pr "- %s : %s\n%!" (Typec.pp_typ typ) (value_to_string value);
-
     ok { state with frame }
 
 

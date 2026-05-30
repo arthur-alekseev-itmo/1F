@@ -479,6 +479,7 @@ end = struct
         | TFun (f_l, f_r) ->
             let* r_ty = substitute f_l a_ty f_r in
             Result.ok r_ty
+        | TFree v -> Result.ok f_ty
         | _ ->
             let trm = PPAst.pp_expr expr in
             let typ = Typec.pp_typ f_ty in

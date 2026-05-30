@@ -75,7 +75,11 @@ module PPAst = struct
     | Lambda lam ->
         Fmt.str "лм %s -> %s" (pp_t_pat_ lam.arg)
           (pp_expr_' (offset ^ "  ") lam.body)
-    | IfThenElse _ -> Fmt.str "ITE TODO"
+    | IfThenElse ite ->
+        Fmt.str " если %s то %s иначе %s"
+          (pp_expr_' offset ite.cond)
+          (pp_expr_' offset ite.thenBranch)
+          (pp_expr_' offset ite.elseBranch)
     | Application (f, arg) ->
         let f' = pp_expr_' offset f in
         let arg = pp_expr_ true offset arg in

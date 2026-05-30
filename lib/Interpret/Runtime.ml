@@ -18,7 +18,7 @@ module Runtime = struct
     | VRecord of value StringMap.t
     | VBuiltin of (value -> value)
     | VChar of Uchar.t
-    | VLazy of Ast.expr * value StringMap.t
+    | VLazy of Ast.expr * value StringMap.t * Ast.pattern option
 
   and variant_data = { tag : string; value : value }
   and closure_data = { f : Ast.lambda_body; captured : value StringMap.t }
@@ -41,7 +41,8 @@ module Runtime = struct
         |> List.filter not_builtin
         |> List.map mapping
         |> String.concat ", "
-        |> Fmt.str "<closure, cap=%s>"
+        |> Fmt.str "<closure, fn=%s, cap=%s>"
+             (PPAst.pp_expr (Lambda closure.f, Unknown))
     | VString s -> CCUtf8_string.to_string s
     | VInt i -> string_of_int i
     | VFloat f -> string_of_float f
@@ -69,7 +70,7 @@ module Runtime = struct
         Format.sprintf "{ %s }" fields
     | VBuiltin _ -> "<builtin>"
     | VChar c -> uchar_to_string c
-    | VLazy (e, _) -> Fmt.str "<lazy %s>" (PPAst.pp_expr e)
+    | VLazy (e, _, _) -> Fmt.str "<lazy %s>" (PPAst.pp_expr e)
     | VModule m -> Format.sprintf "<module %s>" m.name
 
 

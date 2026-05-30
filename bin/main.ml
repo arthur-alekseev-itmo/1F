@@ -57,7 +57,7 @@ let main () =
           List.iter
             (fun (k, v) -> Format.printf "%s: %s\n" k (Typec.pp_typ v))
             ty_list;
-          let program = SkbClosure.convert_closures program in
+          (* let program = SkbClosure.convert_closures program in *)
           print_endline "CC END";
           let state = Interpreter.interpret program in
           REPL.start_loop input typec state
