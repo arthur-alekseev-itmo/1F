@@ -11,6 +11,7 @@ let input_file = ref "вход.1ф"
 let output_file = ref None
 let use_stdout = ref false
 let use_stdin = ref false
+let enable_repl = ref false
 
 let speclist =
   [ ("--input", Arg.Set_string input_file, "Input file with .1ф extension");
@@ -25,7 +26,10 @@ let speclist =
         (fun x ->
           use_stdin := x;
           input_file := "stdin"),
-      "Use stdin instead of reading a file" ) ]
+      "Use stdin instead of reading a file" );
+    ( "--repl",
+      Arg.Bool (fun x -> enable_repl := x),
+      "Enable REPL after program execution" ) ]
 
 
 let usage_msg = "1ф --input <path> [--output <path>]"
@@ -46,21 +50,13 @@ let main () =
   let ( let* ) = Result.bind in
   Arg.parse speclist ignore usage_msg;
   let* input = read_string () in
-  print_endline "START";
   match Parser.program_of_string input with
   | Result.Ok program ->
-      print_endline "PARSE END";
       (match LocalTypec.infer program with
       | Result.Ok typec ->
-          let ty_list = LocalTypec.env_to_list typec in
-          print_endline "TYP END";
-          List.iter
-            (fun (k, v) -> Format.printf "%s: %s\n" k (Typec.pp_typ v))
-            ty_list;
-          (* let program = SkbClosure.convert_closures program in *)
-          print_endline "CC END";
           let state = Interpreter.interpret program in
-          REPL.start_loop input typec state
+          if !enable_repl then REPL.start_loop input typec state
+          else Result.ok ()
       | Result.Error e -> Result.ok @@ ParserErrors.print !input_file input e)
   | Result.Error e -> Result.ok @@ ParserErrors.print !input_file input e
 

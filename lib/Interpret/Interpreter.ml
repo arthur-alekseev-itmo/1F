@@ -10,13 +10,15 @@ module Interpreter = struct
   let write_local name value ctx =
     { ctx with locals = StringMap.add name value ctx.locals }
 
+
   let rec search_in_ctx (name : string) ctx =
     match (StringMap.find_opt name ctx.locals, ctx.parent) with
     | None, None ->
-      print_endline name;
-      failwith @@ "Value not found : " ^ name
+        print_endline name;
+        failwith @@ "Value not found : " ^ name
     | Some x, _ -> x
     | None, Some p -> search_in_ctx name p
+
 
   let initial_stack = { parent = None; locals = Builtins.builtins }
 
@@ -28,6 +30,7 @@ module Interpreter = struct
     | UnitLiteral -> VUnit
     | FloatLiteral x -> VFloat x
     | CharLiteral x -> VChar x
+
 
   let rec set_pattern (p : pattern) (e : value) vars =
     match (fst p, e) with
@@ -45,17 +48,19 @@ module Interpreter = struct
         set_pattern ppat v.value vars
     | _ -> Error "Bad pattern match"
 
+
   let set_pattern_force p e v =
     match set_pattern p e v with Ok ok -> ok | Error err -> failwith err
+
 
   let set_pattern_to_ctx (p : pattern) (e : value) ctx =
     let locals = set_pattern_force p e ctx.locals in
     { ctx with locals }
 
+
   let has_module c ctx =
-    match StringMap.find_opt c ctx with
-    | Some(VModule _) -> true
-    | _ -> false
+    match StringMap.find_opt c ctx with Some (VModule _) -> true | _ -> false
+
 
   let rec eval_expr (e : expr) ctx =
     match fst e with
@@ -83,8 +88,7 @@ module Interpreter = struct
     | TupleInit xs ->
         let xs' = List.map (fun e -> eval_expr e ctx) xs in
         VTuple xs'
-    | Ctor c when has_module c ctx.locals -> 
-         search_in_ctx c ctx
+    | Ctor c when has_module c ctx.locals -> search_in_ctx c ctx
     | Ctor c -> VVariant { tag = c; value = VUnit }
     | FieldAccess (target, field) ->
         let target' = eval_expr target ctx in
@@ -98,12 +102,13 @@ module Interpreter = struct
     | RecordUpdate _ -> failwith "TODO: Record update"
     | EmptyList -> VList []
 
+
   and eval_match (scrutinee : value) branches ctx =
     let try_branch (branch : match_pattern_branch) =
       match set_pattern branch.pattern scrutinee ctx.locals with
       | Ok locals ->
           let ctx' = { ctx with locals } in
-          let t = Const (BoolLiteral true), Unknown in
+          let t = (Const (BoolLiteral true), Unknown) in
           let when_clause = Option.value ~default:t branch.when_clause in
           let guard_result = eval_expr when_clause ctx' in
           if guard_result = VBool true then Ok (eval_expr branch.result ctx')
@@ -112,10 +117,11 @@ module Interpreter = struct
     in
     match branches with
     | [] -> failwith "Non exhaustive match"
-    | h :: t -> (
-        match try_branch h with
-        | Ok v -> v
-        | Error _ -> eval_match scrutinee t ctx)
+    | h :: t ->
+      (match try_branch h with
+      | Ok v -> v
+      | Error _ -> eval_match scrutinee t ctx)
+
 
   and eval_ite (ite : ite_body) ctx =
     let cond' = eval_expr ite.cond ctx in
@@ -124,23 +130,31 @@ module Interpreter = struct
     | VBool false -> eval_expr ite.elseBranch ctx
     | _ -> failwith "Awaited bool"
 
+
   and eval_field_access (target : value) (field : string) _ =
     match target with
     | VRecord r -> StringMap.find field r
     | VModule m -> StringMap.find field m.values
-    | e -> 
-      let message = Format.sprintf "Can only lookup value in record or module. Got: %s" (value_to_string e) in
-      failwith message
+    | e ->
+        let message =
+          Format.sprintf "Can only lookup value in record or module. Got: %s"
+            (value_to_string e)
+        in
+        failwith message
+
 
   and unlazy v ctx =
     let merger _ _ a = Some a in
     match v with
-    |VLazy (x, locals, Some rec_pattern) ->
-      let ctx = set_pattern_to_ctx rec_pattern v ctx in
-      eval_expr x { ctx with locals = StringMap.union merger ctx.locals locals}
+    | VLazy (x, locals, Some rec_pattern) ->
+        let ctx = set_pattern_to_ctx rec_pattern v ctx in
+        eval_expr x
+          { ctx with locals = StringMap.union merger ctx.locals locals }
     | VLazy (x, locals, None) ->
-      eval_expr x { ctx with locals = StringMap.union merger ctx.locals locals} 
+        eval_expr x
+          { ctx with locals = StringMap.union merger ctx.locals locals }
     | e -> e
+
 
   and eval_application (callee : value) (arg : value) ctx =
     match unlazy callee ctx with
@@ -151,6 +165,7 @@ module Interpreter = struct
         eval_expr closure.f.body ctx'
     | VVariant v when v.value = VUnit -> VVariant { v with value = arg }
     | e -> failwith @@ "Cannot apply non-function: " ^ value_to_string e
+
 
   let rec interpret_decl ctx (d : decl) =
     match d with
@@ -173,8 +188,8 @@ module Interpreter = struct
         let module_ctx = m.decls |> List.fold_left interpret_decl module_ctx in
         let value = VModule { name = m.name; values = module_ctx.locals } in
         set_pattern_to_ctx (PatVariable m.name, Unknown) value ctx
-    | AliasDecl _ | RecordDecl _ | AdtDecl _-> ctx
+    | AliasDecl _ | RecordDecl _ | AdtDecl _ -> ctx
 
-  let interpret (p : decl list) =
-    List.fold_left interpret_decl initial_stack p
+
+  let interpret (p : decl list) = List.fold_left interpret_decl initial_stack p
 end
