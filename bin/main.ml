@@ -6,6 +6,7 @@ open OneF.Semantics.LocalTypec
 open OneF.Backend.SkbClosure
 open OneF.Backend.SkbCompiler
 open OneF.Backend.SkibidIR
+open OneF.Backend.SkbDesugar
 
 let input_file = ref "вход.1ф"
 let output_file = ref None
@@ -54,9 +55,13 @@ let main () =
   | Result.Ok program ->
     (match LocalTypec.infer program with
     | Result.Ok _typec ->
-        let cc_prog = SkbClosure.convert_closures program in
-        let compiled = SkbCompiler.compile cc_prog in
-        SkibidIR.pp_skibidir compiled |> print_endline |> Result.ok
+        program
+        |> SkbDesugar.desugar
+        |> SkbClosure.convert_closures
+        |> SkbCompiler.compile
+        |> SkibidIR.pp_skibidir
+        |> print_endline
+        |> Result.ok
     | Result.Error e -> Result.ok @@ ParserErrors.print !input_file input e)
   | Result.Error e -> Result.ok @@ ParserErrors.print !input_file input e
 

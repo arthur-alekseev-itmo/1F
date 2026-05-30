@@ -15,12 +15,28 @@ module SkbCompiler = struct
     Fmt.str "label$%d" !current_label
 
 
+  let last_label () = Fmt.str "label$%d" !current_label
   let function_locations = Hashtbl.create 128
   let global_locations : (string, global_sym) Hashtbl.t = Hashtbl.create 128
   let skb_instructions = Dynarray.create ()
   let push = Dynarray.add_last skb_instructions
   let curr_index () = Dynarray.length skb_instructions
-  let sigbus () = push Sigbus
+  let ctor_tags = Hashtbl.create 128
+
+  let get_ctor_tag name =
+    match Hashtbl.find_opt ctor_tags name with
+    | None ->
+        let length = Hashtbl.length ctor_tags in
+        Hashtbl.add ctor_tags name length;
+        length
+    | Some x -> x
+
+
+  let sigbus () =
+    let curr = curr_index () in
+    push @@ BranchFalse (Exact (curr + 2));
+    push Sigbus
+
 
   let get_local (locals : int StringMap.t) name =
     match StringMap.find_opt name locals with
@@ -28,6 +44,16 @@ module SkbCompiler = struct
         let new_idx = StringMap.to_list locals |> List.length in
         (new_idx, StringMap.add name new_idx locals)
     | Some idx -> (idx, locals)
+
+
+  let push_literal (lit : literal) =
+    match lit with
+    | IntLiteral i -> LoadConst (ScInt i)
+    | FloatLiteral f -> LoadConst (ScFloat f)
+    | StringLiteral s -> LoadConst (ScString s)
+    | BoolLiteral b -> LoadConst (ScInt (if b then 1 else 0))
+    | CharLiteral c -> LoadConst (ScInt (Uchar.to_int c))
+    | UnitLiteral -> LoadConst (ScInt 0)
 
 
   let rec compile_unpattern_general save_var on_fail locals (pat : pattern) :
@@ -41,15 +67,23 @@ module SkbCompiler = struct
         let length = List.length vs in
         push @@ DeconstructTuple length;
         List.fold_left (compile_unpattern_general save_var on_fail) locals vs
-    | PatCtor (ctor, inner) -> failwith "TODO"
+    | PatCtor (ctor, inner) ->
+        push GetCtorTag;
+        let ctor_id = get_ctor_tag ctor in
+        push @@ LoadConst (ScInt ctor_id);
+        push @@ CmpOperator CEq;
+        on_fail ();
+        compile_unpattern_general save_var on_fail locals inner
     | PatWildcard ->
         push Drop;
         locals
-    | PatListCons _ -> failwith "TODO: compile cons"
-    | PatLiteral _ ->
-        push Drop;
+    | PatListCons _ -> failwith "Cons must be desugared"
+    | PatLiteral lit ->
+        push @@ push_literal lit;
+        push @@ CmpOperator CEq;
+        on_fail ();
         locals
-    | PatEmptyList -> failwith "TODO: compile empty list"
+    | PatEmptyList -> failwith "Empty list must have been desugared"
 
 
   let save_local locals name =
@@ -70,16 +104,6 @@ module SkbCompiler = struct
 
   let compile_unpattern_global on_fail =
     compile_unpattern_general save_global on_fail
-
-
-  let push_literal (lit : literal) =
-    match lit with
-    | IntLiteral i -> LoadConst (ScInt i)
-    | FloatLiteral f -> LoadConst (ScFloat f)
-    | StringLiteral s -> LoadConst (ScString s)
-    | BoolLiteral b -> LoadConst (ScInt (if b then 1 else 0))
-    | CharLiteral c -> LoadConst (ScInt (Uchar.to_int c))
-    | UnitLiteral -> LoadConst (ScInt 0)
 
 
   let push_value locals (name : string) =
@@ -124,11 +148,28 @@ module SkbCompiler = struct
     | FieldAccess _ -> failwith "TODO"
     | Match (scr, branches) ->
         let locals = compile_expr locals scr in
-        List.fold_left compile_branch locals branches
+        let end_label = fresh_label () in
+        List.fold_left (compile_branch end_label) locals branches
     | EmptyList -> failwith "TODO: elist"
 
 
-  and compile_branch locals (branch : match_pattern_branch) = failwith "TODO"
+  and compile_branch end_label locals (branch : match_pattern_branch) =
+    let next_label = fresh_label () in
+    let goto_next () = push @@ BranchFalse (Relocation next_label) in
+    let locals = compile_unpattern goto_next locals branch.pattern in
+    (* Check when_clause *)
+    let locals =
+      match branch.when_clause with
+      | Some x -> compile_expr locals x
+      | None ->
+          push @@ LoadConst (ScInt 1);
+          locals
+    in
+    goto_next ();
+    let locals = compile_expr locals branch.result in
+    push @@ Branch (Relocation end_label);
+    locals
+
 
   let compile_let (decl : cc_decl_data) =
     match (fst decl.pat, decl.args) with
@@ -153,7 +194,7 @@ module SkbCompiler = struct
 
 
   let add_globals () =
-    let add x = Hashtbl.replace global_locations x (GlobalFunc (-1)) in
+    let add i x = Hashtbl.replace global_locations x (GlobalFunc (-i)) in
     let translation_fns =
       [ "напечатай"; "считай"; "дебаг"; "список_из_строки"; "строка_из_списка";
         "число_из_символа"; "символ_из_числа"; "число_из_строки";
@@ -161,7 +202,9 @@ module SkbCompiler = struct
     in
     let ops = [ "+"; "-"; "*"; "/"; "%"; "^"; "@"; "&&"; "||" ] in
     let cmps = [ "<"; ">"; "="; "<>"; ">="; "<="; "::" ] in
-    List.iter add (cmps @ ops @ translation_fns)
+    List.iteri add (cmps @ ops @ translation_fns);
+    let builtin_cons = [ ("Конк$", -1); ("Нил$", -2) ] in
+    Hashtbl.add_seq ctor_tags @@ List.to_seq builtin_cons
 
 
   let compile (decls : cc_decl list) : skb_program =
