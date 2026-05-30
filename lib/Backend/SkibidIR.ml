@@ -41,4 +41,13 @@ module SkibidIR = struct
   [@@deriving show { with_path = false }]
 
   type skb_program = skb_instr array [@@deriving show { with_path = false }]
+
+  let pp_skibidir (instructions : skb_program) =
+    let rec inner index =
+      if index >= Array.length instructions then []
+      else
+        let instr = Array.get instructions index in
+        Fmt.str "SKB_%03d %s" index (show_skb_instr instr) :: inner (index + 1)
+    in
+    inner 0 |> String.concat "\n"
 end

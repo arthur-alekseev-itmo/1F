@@ -14,6 +14,15 @@ module Builtins = struct
     binop_base inner
 
 
+  let float_binop_base op =
+    let inner a b =
+      match (a, b) with
+      | VFloat a, VFloat b -> VFloat (op a b)
+      | _ -> failwith "Cannot apply float operator to non float"
+    in
+    binop_base inner
+
+
   let bool_binop_base op =
     let inner a b =
       match (a, b) with
@@ -190,6 +199,8 @@ module Builtins = struct
   let builtin_name_pairs =
     [ ("+", int_binop_base ( + )); ("-", int_binop_base ( - ));
       ("*", int_binop_base ( * )); ("/", int_binop_base ( / ));
+      ("+.", float_binop_base ( +. )); ("-.", float_binop_base ( -. ));
+      ("*.", float_binop_base ( *. )); ("/.", float_binop_base ( /. ));
       ("%", int_binop_base ( mod )); ("^", string_append);
       ("<", polycompare_base (( = ) (-1))); (">", polycompare_base (( = ) 1));
       ("=", polycompare_base (( = ) 0)); ("<>", polycompare_base (( <> ) 0));

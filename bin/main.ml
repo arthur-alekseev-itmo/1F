@@ -52,12 +52,12 @@ let main () =
   let* input = read_string () in
   match Parser.program_of_string input with
   | Result.Ok program ->
-      (match LocalTypec.infer program with
-      | Result.Ok typec ->
-          let state = Interpreter.interpret program in
-          if !enable_repl then REPL.start_loop input typec state
-          else Result.ok ()
-      | Result.Error e -> Result.ok @@ ParserErrors.print !input_file input e)
+    (match LocalTypec.infer program with
+    | Result.Ok _typec ->
+        let cc_prog = SkbClosure.convert_closures program in
+        let compiled = SkbCompiler.compile cc_prog in
+        SkibidIR.pp_skibidir compiled |> print_endline |> Result.ok
+    | Result.Error e -> Result.ok @@ ParserErrors.print !input_file input e)
   | Result.Error e -> Result.ok @@ ParserErrors.print !input_file input e
 
 

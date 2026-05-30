@@ -8,6 +8,7 @@ module SkbCompiler = struct
   type global_sym = GlobalFunc of int | GlobalValue of int
 
   let current_label = ref 0
+  let global_value_count = ref 0
 
   let fresh_label () =
     current_label := !current_label + 1;
@@ -29,19 +30,17 @@ module SkbCompiler = struct
     | Some idx -> (idx, locals)
 
 
-  let rec compile_unpattern on_fail locals (pat : pattern) : int StringMap.t =
+  let rec compile_unpattern_general save_var on_fail locals (pat : pattern) :
+      int StringMap.t =
     match fst pat with
     | PatUnit ->
         push Drop;
         locals
-    | PatVariable v ->
-        let index, locals = get_local locals v in
-        push @@ StoreLocal index;
-        locals
+    | PatVariable v -> save_var locals v
     | PatTuple vs ->
         let length = List.length vs in
         push @@ DeconstructTuple length;
-        List.fold_left (compile_unpattern on_fail) locals vs
+        List.fold_left (compile_unpattern_general save_var on_fail) locals vs
     | PatCtor (ctor, inner) -> failwith "TODO"
     | PatWildcard ->
         push Drop;
@@ -51,6 +50,26 @@ module SkbCompiler = struct
         push Drop;
         locals
     | PatEmptyList -> failwith "TODO: compile empty list"
+
+
+  let save_local locals name =
+    let index, locals = get_local locals name in
+    push @@ StoreLocal index;
+    locals
+
+
+  let compile_unpattern on_fail = compile_unpattern_general save_local on_fail
+
+  let save_global locals name =
+    let index = !global_value_count in
+    Hashtbl.add global_locations name (GlobalValue index);
+    push @@ StoreGlobal index;
+    global_value_count := !global_value_count + 1;
+    locals
+
+
+  let compile_unpattern_global on_fail =
+    compile_unpattern_general save_global on_fail
 
 
   let push_literal (lit : literal) =
@@ -120,7 +139,11 @@ module SkbCompiler = struct
         let params = decl.args |> List.map fst in
         let locals = List.fold_left (compile_unpattern sigbus) locals params in
         compile_expr locals decl.expr |> ignore
-    | pat, _ :: _ -> failwith "TODO"
+    | _, _ :: _ -> failwith "Cannot make a function with complex name"
+    | pat, [] ->
+        let locals = StringMap.empty in
+        compile_expr locals decl.expr |> ignore;
+        compile_unpattern_global sigbus locals (pat, Unknown) |> ignore
 
 
   let compile_decl (cc_decl : cc_decl) =

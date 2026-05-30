@@ -584,6 +584,7 @@ end = struct
 
   let empty_env =
     let t_int = (TBasic TInt, Unknown) in
+    let t_float = (TBasic TFloat, Unknown) in
     let t_bool = (TBasic TBool, Unknown) in
     let t_string = (TBasic TString, Unknown) in
     let t_char = (TBasic TChar, Unknown) in
@@ -594,10 +595,12 @@ end = struct
     let arrow3 a b c = (TFun (a, (TFun (b, c), Unknown)), Unknown) in
     let arrow a b = (TFun (a, b), Unknown) in
     let int_binop_ty = arrow3 t_int t_int t_int in
+    let float_binop_ty = arrow3 t_float t_float t_float in
     let compare_ty = arrow3 (tvar "а") (tvar "а") t_bool in
     StringMap.of_list
       [ ("+", int_binop_ty); ("-", int_binop_ty); ("*", int_binop_ty);
-        ("/", int_binop_ty); ("%", int_binop_ty);
+        ("/", int_binop_ty); ("%", int_binop_ty); ("+.", float_binop_ty);
+        ("-.", float_binop_ty); ("*.", float_binop_ty); ("/.", float_binop_ty);
         ("^", arrow3 t_string t_string t_string); ("<", compare_ty);
         (">", compare_ty); ("=", compare_ty); ("<>", compare_ty);
         (">=", compare_ty); ("<=", compare_ty);
