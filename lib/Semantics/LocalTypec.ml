@@ -60,6 +60,7 @@ module LocalTypec : sig
   type typec_result = (env, typec_err) result
 
   val infer : program -> typec_result
+  val infer_program : env -> program -> typec_result
   val infer_decl : env -> decl -> typec_result
   val infer_expr : env -> expr -> (Typec.t, typec_err) result
   val env_to_list : env -> (string * Typec.t) list
@@ -618,4 +619,8 @@ end = struct
 
   let infer (program : program) : typec_result =
     foldlM infer_decl empty_env program
+
+
+  let infer_program (env : env) program : typec_result =
+    foldlM infer_decl env program
 end

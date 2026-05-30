@@ -36,13 +36,10 @@ module REPL = struct
         let frame = List.fold_left interpret_decl frame decl in
         Fmt.pr "decls registered:\n%!";
         let new_decls =
-          types
-          |> StringMap.filter (fun k _ -> StringMap.mem k state.types |> not)
-          |> LocalTypec.env_to_list
+          StringMap.filter (fun k _ -> StringMap.mem k state.types |> not) types
         in
-        List.iter
-          (fun (k, v) -> Fmt.pr "- %s: %s\n%!" k (Typec.pp_typ v))
-          new_decls;
+        let new_decls = LocalTypec.env_to_list new_decls in
+        List.iter (fun (k, v) -> Fmt.pr "- %s: %s" k (Typec.pp_typ v)) new_decls;
         ok { state with frame; types }
     | Expr expr ->
         let* typ = LocalTypec.infer_expr state.types expr in
