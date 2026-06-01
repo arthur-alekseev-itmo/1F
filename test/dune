@@ -26,5 +26,23 @@
  (instrumentation
   (backend bisect_ppx)))
 
+(executable
+ (name test_menhir_eval)
+ (modules test_menhir_eval)
+ (public_name test_menhir_eval)
+ (libraries OneF))
+
+(executable
+ (name bench_menhir)
+ (modules bench_menhir)
+ (public_name bench_menhir)
+ (libraries OneF unix))
+
+(executable
+ (name check_paths)
+ (modules check_paths)
+ (public_name check_paths)
+ (libraries OneF))
+
 (cram
- (deps "./test_lexer.exe" "./test_interpreter.exe" "./test_eval.exe"))
+ (deps "./test_lexer.exe" "./test_interpreter.exe" "./test_eval.exe" "./test_menhir_eval.exe"))

@@ -1,11 +1,8 @@
 open Semantics.LocalTypec
 open Runtime.Runtime
 open Parsing.Parser
-open Parsing.Lexer
 open Result
 open Parsing.ParserErrors.ParserErrors
-open Backend.SkbClosure
-open Parsing.PPAst
 open LNoise
 open Parsing.Ast.Ast
 
