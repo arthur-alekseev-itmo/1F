@@ -5,7 +5,7 @@ open Parsing.Ast.Ast
 module SkbCompiler = struct
   module StringMap = Map.Make (String)
 
-  type global_sym = GlobalFunc of int | GlobalValue of int
+  type global_sym = GlobalFunc of int * int | GlobalValue of int
 
   let current_label = ref 0
   let global_value_count = ref 0
@@ -22,6 +22,10 @@ module SkbCompiler = struct
   let push = Dynarray.add_last skb_instructions
   let curr_index () = Dynarray.length skb_instructions
   let ctor_tags = Hashtbl.create 128
+
+  let mark_label_here name =
+    Hashtbl.add global_locations name (GlobalFunc (curr_index (), 0))
+
 
   let get_ctor_tag name =
     match Hashtbl.find_opt ctor_tags name with
@@ -68,11 +72,13 @@ module SkbCompiler = struct
         push @@ DeconstructTuple length;
         List.fold_left (compile_unpattern_general save_var on_fail) locals vs
     | PatCtor (ctor, inner) ->
-        push GetCtorTag;
+        push Dup;
+        push GetVariantTag;
         let ctor_id = get_ctor_tag ctor in
         push @@ LoadConst (ScInt ctor_id);
         push @@ CmpOperator CEq;
         on_fail ();
+        push GetVariantContent;
         compile_unpattern_general save_var on_fail locals inner
     | PatWildcard ->
         push Drop;
@@ -111,7 +117,7 @@ module SkbCompiler = struct
     | Some x -> push @@ LoadLocal x
     | None ->
       (match Hashtbl.find_opt global_locations name with
-      | Some (GlobalFunc x) -> push @@ FunctionAddress (Exact x)
+      | Some (GlobalFunc (x, arity)) -> push @@ FunctionAddress (Exact x, arity)
       | Some (GlobalValue x) -> push @@ LoadGlobal (Exact x)
       | None -> push @@ LoadGlobal (Relocation name))
 
@@ -134,26 +140,46 @@ module SkbCompiler = struct
         let locals = compile_unpattern sigbus locals pat in
         compile_expr locals in_expr
     | Lambda _ -> failwith "Lambdas must not appear in ready-to-compile AST"
-    | IfThenElse _ -> failwith "TODO: ite"
+    | IfThenElse ite ->
+        compile_expr locals ite.cond |> ignore;
+        let else_label = fresh_label () in
+        let end_label = fresh_label () in
+        push @@ BranchFalse (Relocation else_label);
+        compile_expr locals ite.thenBranch |> ignore;
+        push @@ Branch (Relocation end_label);
+        mark_label_here else_label;
+        compile_expr locals ite.elseBranch |> ignore;
+        mark_label_here end_label;
+        locals
+    | Application ((Ctor c, _), expr) ->
+        let ctor_tag = get_ctor_tag c in
+        let locals = compile_expr locals expr in
+        push @@ ConstructVariant ctor_tag;
+        locals
     | Application (f, arg) ->
-        let locals = compile_expr locals f in
         let locals = compile_expr locals arg in
+        let locals = compile_expr locals f in
         push Apply;
         locals
     | Ctor c ->
-        push_value locals c;
-        locals
+        Fmt.pr "TODO: Ctor appear: %s" c;
+        failwith "123"
     | RecordInit _ -> failwith "TODO"
     | RecordUpdate _ -> failwith "TODO"
     | FieldAccess _ -> failwith "TODO"
     | Match (scr, branches) ->
         let locals = compile_expr locals scr in
         let end_label = fresh_label () in
-        List.fold_left (compile_branch end_label) locals branches
+        let locals =
+          List.fold_left (compile_branch end_label) locals branches
+        in
+        mark_label_here end_label;
+        locals
     | EmptyList -> failwith "TODO: elist"
 
 
   and compile_branch end_label locals (branch : match_pattern_branch) =
+    push @@ Dup;
     let next_label = fresh_label () in
     let goto_next () = push @@ BranchFalse (Relocation next_label) in
     let locals = compile_unpattern goto_next locals branch.pattern in
@@ -168,6 +194,7 @@ module SkbCompiler = struct
     goto_next ();
     let locals = compile_expr locals branch.result in
     push @@ Branch (Relocation end_label);
+    mark_label_here next_label;
     locals
 
 
@@ -175,11 +202,16 @@ module SkbCompiler = struct
     match (fst decl.pat, decl.args) with
     | PatVariable name, _ :: _ ->
         let locals = StringMap.empty in
+        let arity = List.length decl.args in
         let curr = curr_index () in
-        Hashtbl.add function_locations name (GlobalFunc curr);
+        Hashtbl.add global_locations name (GlobalFunc (curr, arity));
+        Hashtbl.add function_locations name (GlobalFunc (curr, arity));
         let params = decl.args |> List.map fst in
-        let locals = List.fold_left (compile_unpattern sigbus) locals params in
-        compile_expr locals decl.expr |> ignore
+        let locals =
+          List.fold_left (compile_unpattern sigbus) locals (List.rev params)
+        in
+        compile_expr locals decl.expr |> ignore;
+        push @@ Return
     | _, _ :: _ -> failwith "Cannot make a function with complex name"
     | pat, [] ->
         let locals = StringMap.empty in
@@ -194,7 +226,7 @@ module SkbCompiler = struct
 
 
   let add_globals () =
-    let add i x = Hashtbl.replace global_locations x (GlobalFunc (-i)) in
+    let add i x = Hashtbl.replace global_locations x (GlobalFunc (-i - 1, 2)) in
     let translation_fns =
       [ "напечатай"; "считай"; "дебаг"; "список_из_строки"; "строка_из_списка";
         "число_из_символа"; "символ_из_числа"; "число_из_строки";
@@ -203,12 +235,25 @@ module SkbCompiler = struct
     let ops = [ "+"; "-"; "*"; "/"; "%"; "^"; "@"; "&&"; "||" ] in
     let cmps = [ "<"; ">"; "="; "<>"; ">="; "<="; "::" ] in
     List.iteri add (cmps @ ops @ translation_fns);
+    Hashtbl.iter
+      (fun k (GlobalFunc (v, _)) -> Fmt.pr "%s %d\n" k v)
+      global_locations;
     let builtin_cons = [ ("Конк$", -1); ("Нил$", -2) ] in
     Hashtbl.add_seq ctor_tags @@ List.to_seq builtin_cons
 
 
+  let ungroup (d : cc_decl) =
+    match d with CCLetGroup g -> g | CCLet c -> [ c ]
+
+
+  let is_function (d : cc_decl_data) = List.is_empty d.args
+
   let compile (decls : cc_decl list) : skb_program =
     add_globals ();
-    List.iter compile_decl decls;
+    let decls = List.concat_map ungroup decls in
+    let globs, funs = List.partition is_function decls in
+    List.iter compile_let globs;
+    push @@ Stop;
+    List.iter compile_let funs;
     skb_instructions |> Dynarray.to_array
 end

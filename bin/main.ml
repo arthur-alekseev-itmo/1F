@@ -7,6 +7,7 @@ open OneF.Backend.SkbClosure
 open OneF.Backend.SkbCompiler
 open OneF.Backend.SkibidIR
 open OneF.Backend.SkbDesugar
+open OneF.Backend.SkbLinker
 
 let input_file = ref "вход.1ф"
 let output_file = ref None
@@ -51,6 +52,10 @@ let main () =
   let ( let* ) = Result.bind in
   Arg.parse speclist ignore usage_msg;
   let* input = read_string () in
+  let print_skibidir ir =
+    SkibidIR.pp_skibidir ir |> print_endline;
+    ir
+  in
   match Parser.program_of_string input with
   | Result.Ok program ->
     (match LocalTypec.infer program with
@@ -59,8 +64,9 @@ let main () =
         |> SkbDesugar.desugar
         |> SkbClosure.convert_closures
         |> SkbCompiler.compile
-        |> SkibidIR.pp_skibidir
-        |> print_endline
+        |> SkbLinker.link SkbCompiler.global_locations
+        |> print_skibidir
+        |> SkibidIR.serialize_skibidir
         |> Result.ok
     | Result.Error e -> Result.ok @@ ParserErrors.print !input_file input e)
   | Result.Error e -> Result.ok @@ ParserErrors.print !input_file input e

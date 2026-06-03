@@ -32,13 +32,18 @@ module SkibidIR = struct
     | IntOperator of skb_int_op
     | FloatOperator of skb_float_op
     | CmpOperator of skb_cmp_op
-    | FunctionAddress of location
+    | FunctionAddress of location * int
     | Apply
     | ConstructTuple of int
     | DeconstructTuple of int
     | Drop
     | Sigbus
-    | GetCtorTag
+    | GetVariantTag
+    | GetVariantContent
+    | ConstructVariant of int
+    | Stop
+    | Return
+    | Dup
   [@@deriving show { with_path = false }]
 
   type skb_program = skb_instr array [@@deriving show { with_path = false }]
@@ -63,6 +68,10 @@ module SkibidIR = struct
       Bytes.set_int64_ne b 1 (Int64.of_int p);
       b
     in
+    let and_with_int8 p b =
+      Bytes.set_uint8 b 9 p;
+      b
+    in
     let with_float64 p b =
       Bytes.set_int64_ne b 1 (Int64.bits_of_float p);
       b
@@ -74,6 +83,11 @@ module SkibidIR = struct
       | Relocation _ -> failwith "Linking was not performed"
       | Exact i -> one_arg p i
     in
+    let one_loc_one_arg p i j =
+      match i with
+      | Relocation _ -> failwith "Linking was not performed"
+      | Exact i -> sized 10 |> with_pref p |> with_int64 i |> and_with_int8 j
+    in
     match instr with
     | LoadConst (ScFnAddr i) | LoadConst (ScInt i) -> one_arg 0x1 i
     | LoadConst (ScString s) ->
@@ -82,7 +96,7 @@ module SkibidIR = struct
         let string_bytes = Bytes.of_string s in
         sized (9 + string_len) |> with_pref 0x2 |> with_int64 string_len
         |> fun b ->
-        Bytes.blit b 9 string_bytes 0 string_len;
+        Bytes.blit string_bytes 0 b 9 string_len;
         b
     | LoadConst (ScFloat f) -> sized 9 |> with_pref 0x1 |> with_float64 f
     | LoadLocal i -> one_arg 0x3 i
@@ -96,13 +110,18 @@ module SkibidIR = struct
     | FloatOperator _ -> failwith "TODO: Reserved skibid (RESV: 0xF 11 12 13)"
     | CmpOperator CEq -> zero_arg 0x14
     | CmpOperator _ -> failwith "TODO: Reseved skibid (RESV: 0x15 16 17 18 19)"
-    | FunctionAddress i -> one_loc 0x20 i
+    | FunctionAddress (i, j) -> one_loc_one_arg 0x20 i j
     | Apply -> zero_arg 0x21
     | ConstructTuple i -> one_arg 0x22 i
     | DeconstructTuple i -> one_arg 0x23 i
     | Drop -> zero_arg 0x24
     | Sigbus -> zero_arg 0xff
-    | GetCtorTag -> zero_arg 0x25
+    | GetVariantTag -> zero_arg 0x25
+    | GetVariantContent -> zero_arg 0x26
+    | ConstructVariant i -> one_arg 0x27 i
+    | Stop -> zero_arg 0x28
+    | Return -> zero_arg 0x29
+    | Dup -> zero_arg 0x30
 
 
   let serialize_skibidir (instructions : skb_program) =

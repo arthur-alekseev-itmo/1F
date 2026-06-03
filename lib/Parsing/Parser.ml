@@ -271,7 +271,7 @@ module Parser = struct
       let* raw_args = wrap parse_args in
       let args = Option.value ~default:[] raw_args in
       let args_r = List.map snd args |> List.fold_left mrg Unknown in
-      return @@ (TypCtor (name, List.rev args), mrg args_r n_p)
+      return @@ (TypCtor (name, args), mrg args_r n_p)
     in
     inner input
 
