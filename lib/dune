@@ -4,4 +4,4 @@
  (name OneF)
  (preprocess
   (pps ppx_deriving.show ppx_deriving.ord sedlex.ppx))
- (libraries uucp containers fmt linenoise menhirLib))
+ (libraries uucp containers fmt linenoise menhirLib angstrom))

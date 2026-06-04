@@ -44,5 +44,29 @@
  (public_name check_paths)
  (libraries OneF))
 
+(executable
+  (name bench_angstrom)
+  (modules bench_angstrom)
+  (public_name bench_angstrom)
+  (libraries OneF unix))
+
+(executable
+  (name bench_ocamlyacc)
+  (modules bench_ocamlyacc)
+  (public_name bench_ocamlyacc)
+  (libraries OneF unix))
+
+(executable
+  (name bench_all)
+  (modules bench_all)
+  (public_name bench_all)
+  (libraries OneF unix angstrom))
+
+(executable
+  (name test_ocamlyacc)
+  (modules test_ocamlyacc)
+  (public_name test_ocamlyacc)
+  (libraries OneF))
+
 (cram
  (deps "./test_lexer.exe" "./test_interpreter.exe" "./test_eval.exe" "./test_menhir_eval.exe"))

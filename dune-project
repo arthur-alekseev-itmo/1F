@@ -29,8 +29,9 @@
   fmt
   ppx_deriving
   linenoise
-  sedlex
-  menhir)
+   sedlex
+   menhir
+   angstrom)
  (tags
   (skibidi importozameshenie fp ocaml)))
 
