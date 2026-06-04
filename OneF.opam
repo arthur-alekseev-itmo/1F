@@ -20,6 +20,8 @@ depends: [
   "ppx_deriving"
   "linenoise"
   "sedlex"
+  "menhir" {>= "20180523"}
+  "angstrom"
   "odoc" {with-doc}
 ]
 build: [

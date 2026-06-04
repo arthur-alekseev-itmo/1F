@@ -1,0 +1,32 @@
+{
+  "grammars": [
+    {
+      "name": "odin",
+      "scope": "source.odin",
+      "file-types": ["1f"],
+      "injection-regex": "odin",
+      "highlights": "queries/highlights.scm"
+    }
+  ],
+  "metadata": {
+    "version": "0.1.0",
+    "license": "MIT",
+    "description": "Tree-sitter grammar for 1F language",
+    "authors": [
+      {
+        "name": "Evseev Georg",
+        "email": "lil.godg@yandex.com"
+      }
+    ]
+  },
+  "bindings": {
+    "c": true,
+    "go": true,
+    "node": true,
+    "python": true,
+    "rust": true,
+    "java": false,
+    "swift": false,
+    "zig": false
+  }
+}

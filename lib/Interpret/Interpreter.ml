@@ -1,8 +1,6 @@
 open Runtime.Runtime
 open Builtins
-open Parsing.ParserErrors
 open Parsing.Ast.Ast
-open Parsing.Parser
 
 module Interpreter = struct
   let ( >>= ) = Result.bind
@@ -71,7 +69,7 @@ module Interpreter = struct
         eval_application callee' arg' ctx
     | Value name -> search_in_ctx name ctx
     | LetIn (true, pat, expr, body) ->
-        let rec lazy_value = VLazy (expr, ctx.locals, Some pat) in
+        let lazy_value = VLazy (expr, ctx.locals, Some pat) in
         let ctx' = set_pattern_to_ctx pat lazy_value ctx in
         let expr' = eval_expr expr ctx' in
         let ctx'' = set_pattern_to_ctx pat expr' ctx' in

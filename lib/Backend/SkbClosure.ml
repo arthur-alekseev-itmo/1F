@@ -168,7 +168,7 @@ module SkbClosure = struct
         (e, additional)
     | Const _ -> (expr, [])
     | Value _ -> (expr, [])
-    | LetIn (r, (PatVariable orig_name, pos1), (Lambda lam, pos2), in_expr) ->
+    | LetIn (_, (PatVariable orig_name, pos1), (Lambda lam, pos2), in_expr) ->
         let name = fresh_name orig_name in
         let globals_with_self = StringSet.add name globals in
         let bnd_expr =

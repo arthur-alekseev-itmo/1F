@@ -1,5 +1,5 @@
-open OneF.Interpret.Interpreter
-open OneF.Interpret.REPL
+(* open OneF.Interpret.Interpreter
+open OneF.Interpret.REPL *)
 open OneF.Parsing.Parser
 open OneF.Parsing.ParserErrors
 open OneF.Semantics.LocalTypec

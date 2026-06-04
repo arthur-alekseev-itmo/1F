@@ -1,0 +1,7 @@
+(menhir
+ (modules MenhirParser))
+(menhir
+ (modules OcamlyaccParser))
+ (menhir
+ (modules MenhirParserTable)
+ (flags --table))

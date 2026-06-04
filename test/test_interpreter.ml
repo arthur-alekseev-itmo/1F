@@ -1,10 +1,7 @@
-open OneF.Interpreter.Interpreter
-open OneF.Parsing.Parser.Parser
-open OneF.Parsing.ParserErrors
+open OneF.Parsing.ParserErrors.ParserErrors
 
 let () =
   let input = In_channel.input_all stdin in
-  let parse_result = program_of_string input in
-  match parse_result with
-  | Ok r -> interpret r |> ignore
-  | Error e -> ParserErrors.print "??" input e
+  match OneF.Parsing.Parser.Parser.program_of_string input with
+  | Ok r -> OneF.Interpret.Interpreter.Interpreter.interpret r |> ignore
+  | Error e -> print "" input e
